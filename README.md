@@ -56,7 +56,7 @@ ZeroTier 支持多种操作系统和平台，基本系统要求如下：
 |---------|------------|
 | **Windows** | 下载并运行 [Windows 安装程序](https://www.zerotier.com/download/) (.msi) |
 | **macOS** | 下载并运行 [macOS 安装程序](https://www.zerotier.com/download/) (.pkg) |
-| **Linux** | 运行命令: `curl -s https://raw.githubusercontent.com/rockyshi1993/zerotier-install/main/install.sh \| sudo bash` |
+| **Linux** | 下载脚本: `curl -s -o install.sh https://raw.githubusercontent.com/rockyshi1993/zerotier-install/main/install.sh`<br>然后执行: `sudo bash install.sh` |
 | **Android** | 从 [Google Play](https://play.google.com/store/apps/details?id=com.zerotier.one) 安装 |
 | **iOS** | 从 [App Store](https://apps.apple.com/us/app/zerotier-one/id1084101492) 安装 |
 
@@ -84,8 +84,11 @@ ZeroTier 支持多种操作系统和平台，基本系统要求如下：
 - 故障排除和诊断功能
 
 ```bash
-# 一行命令完成安装
-curl -s https://raw.githubusercontent.com/rockyshi1993/zerotier-install/main/install.sh | sudo bash
+# 下载安装脚本
+curl -s -o install.sh https://raw.githubusercontent.com/rockyshi1993/zerotier-install/main/install.sh
+
+# 执行安装脚本
+sudo bash install.sh
 ```
 
 #### 方法 2: 使用官方一键安装脚本
@@ -397,8 +400,11 @@ ZeroTier 可以配置为代理服务器，允许其他 ZeroTier 客户端通过�
 如果您使用本仓库提供的安装脚本，可以在安装过程中轻松配置代理服务器：
 
 ```bash
-# 下载并运行安装脚本
-curl -s https://raw.githubusercontent.com/rockyshi1993/zerotier-install/main/install.sh | sudo bash
+# 下载安装脚本
+curl -s -o install.sh https://raw.githubusercontent.com/rockyshi1993/zerotier-install/main/install.sh
+
+# 执行安装脚本
+sudo bash install.sh
 ```
 
 在安装过程中，脚本会询问是否将 ZeroTier 节点配置为代理服务器。选择"是"后，脚本将自动：

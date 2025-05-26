@@ -317,8 +317,8 @@ install_zerotier() {
     log "${GREEN}ZeroTier 安装成功${NC}"
 
     # 显示节点 ID
-    NODE_IP=$(zerotier-cli listnetworks | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}')
-    log "${GREEN}ZeroTier 节点 IP: ${NODE_IP}${NC}"
+    NODE_ID=$(zerotier-cli info | awk '{print $3}')
+    log "${GREEN}ZeroTier 节点 ID: ${NODE_ID}${NC}"
 }
 
 # 函数: 加入网络
@@ -573,21 +573,25 @@ detect_private_subnet() {
 
 # 函数: 显示代理服务器配置说明
 show_proxy_instructions() {
-    NODE_IP=$(zerotier-cli listnetworks | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}')
+    NODE_ID=$(zerotier-cli info | awk '{print $3}')
 
     log "${BLUE}ZeroTier 代理服务器配置说明:${NC}"
     log "${YELLOW}请在 ZeroTier Central 中执行以下操作:${NC}"
     log "${YELLOW}1. 登录 https://my.zerotier.com/${NC}"
     log "${YELLOW}2. 找到您的网络，点击进入网络设置页面${NC}"
-    log "${YELLOW}3. 在 'Managed Routes' 区域:${NC}"
-    log "${YELLOW}   - 添加路由: 0.0.0.0/0 via ${NODE_IP} (允许通过此服务器访问互联网)${NC}"
+    log "${YELLOW}3. 在 'Managed Routes' 区域添加路由：${NC}"
+    log "${YELLOW}   - 0.0.0.0/0 via <节点IP>      （实现通过该节点访问互联网）${NC}"
 
-    # 检测私有网络子网
     PRIVATE_SUBNET=$(detect_private_subnet)
     if [ -n "$PRIVATE_SUBNET" ]; then
-        log "${YELLOW}   - 添加路由: ${PRIVATE_SUBNET} via ${NODE_IP} (允许访问此服务器所在的私有网络)${NC}"
+        log "${YELLOW}   - ${PRIVATE_SUBNET} via <节点IP>（实现访问节点所在私有网络）${NC}"
     fi
 
+    log ""
+    log "${YELLOW}⚠️ 注意：${NC}"
+    log "${YELLOW}   - <节点IP> 必须是该节点在 ZeroTier 网络中的实际 IP 地址（如 172.22.231.20）${NC}"
+    log "${YELLOW}   - 请不要填写节点 ID（如 ${NODE_ID}）${NC}"
+    log ""
     log "${YELLOW}4. 保存设置${NC}"
     log "${YELLOW}5. 确保您的客户端设备已加入此网络并获得授权${NC}"
     log "${YELLOW}完成上述配置后，您的 ZeroTier 客户端将能够:${NC}"
