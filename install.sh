@@ -257,16 +257,31 @@ install_zerotier() {
             log "${BLUE}使用 apt 安装 ZeroTier...${NC}"
 
             # 添加 ZeroTier 仓库
-            run_cmd "curl -s 'https://raw.githubusercontent.com/zerotier/ZeroTierOne/master/doc/contact%40zerotier.com.gpg' | gpg --import" "导入 ZeroTier GPG 密钥" || {
-                log "${YELLOW}警告: 无法导入 GPG 密钥，尝试使用一键安装脚本${NC}"
+            run_cmd "curl -s 'https://raw.githubusercontent.com/zerotier/ZeroTierOne/master/doc/contact%40zerotier.com.gpg' -o /tmp/zt-gpg-key" "下载 ZeroTier GPG 密钥" || {
+                log "${YELLOW}警告: 无法下载 GPG 密钥，尝试使用一键安装脚本${NC}"
                 run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
                 return
             }
 
-            run_cmd "apt-key add /tmp/zt-gpg-key" "添加 ZeroTier GPG 密钥" || {
-                log "${YELLOW}警告: 无法添加 GPG 密钥，尝试使用一键安装脚本${NC}"
-                run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
-                return
+            # 使用新的方法添加 GPG 密钥 (适用于新版 Debian/Ubuntu)
+            if [ -d "/etc/apt/trusted.gpg.d" ]; then
+                run_cmd "install -m 0755 -d /etc/apt/keyrings" "创建 keyrings 目录" || log "${YELLOW}警告: 无法创建 keyrings 目录${NC}"
+                run_cmd "cat /tmp/zt-gpg-key | gpg --dearmor > /etc/apt/trusted.gpg.d/zerotier.gpg" "添加 ZeroTier GPG 密钥到 trusted.gpg.d" || {
+                    # 如果新方法失败，尝试使用旧方法
+                    log "${YELLOW}警告: 无法使用新方法添加 GPG 密钥，尝试使用旧方法${NC}"
+                    run_cmd "apt-key add /tmp/zt-gpg-key" "添加 ZeroTier GPG 密钥 (旧方法)" || {
+                        log "${YELLOW}警告: 无法添加 GPG 密钥，尝试使用一键安装脚本${NC}"
+                        run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
+                        return
+                    }
+                }
+            else
+                # 如果 trusted.gpg.d 目录不存在，使用旧方法
+                run_cmd "apt-key add /tmp/zt-gpg-key" "添加 ZeroTier GPG 密钥 (旧方法)" || {
+                    log "${YELLOW}警告: 无法添加 GPG 密钥，尝试使用一键安装脚本${NC}"
+                    run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
+                    return
+                }
             }
 
             if [ "$OS" == "ubuntu" ]; then
