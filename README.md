@@ -420,9 +420,24 @@ sudo bash install.sh
 
 1. 启用 IP 转发：
    ```bash
-   echo 1 > /proc/sys/net/ipv4/ip_forward
-   echo 'net.ipv4.ip_forward = 1' >> /etc/sysctl.conf
-   sysctl -p
+   # 1. 创建新的系统服务
+    sudo sh -c 'cat > /etc/systemd/system/ip-forward.service << EOL
+    [Unit]
+    Description=Enable IP Forwarding
+    After=network.target
+    
+    [Service]
+    Type=oneshot
+    ExecStart=/usr/sbin/sysctl -w net.ipv4.ip_forward=1
+    RemainAfterExit=yes
+    
+    [Install]
+    WantedBy=multi-user.target
+    EOL'
+    
+    # 2. 启用并启动服务
+    sudo systemctl enable ip-forward.service
+    sudo systemctl start ip-forward.service
    ```
 
 2. 配置 NAT 和 iptables 规则：
