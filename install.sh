@@ -254,89 +254,13 @@ install_zerotier() {
 
     case $OS in
         ubuntu|debian)
-            log "${BLUE}使用 apt 安装 ZeroTier...${NC}"
-
-            # 添加 ZeroTier 仓库
-            run_cmd "curl -s 'https://raw.githubusercontent.com/zerotier/ZeroTierOne/master/doc/contact%40zerotier.com.gpg' -o /tmp/zt-gpg-key" "下载 ZeroTier GPG 密钥" || {
-                log "${YELLOW}警告: 无法下载 GPG 密钥，尝试使用一键安装脚本${NC}"
-                run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
-                return
-            }
-
-            # 使用新的方法添加 GPG 密钥 (适用于新版 Debian/Ubuntu)
-            if [ -d "/etc/apt/trusted.gpg.d" ]; then
-                run_cmd "install -m 0755 -d /etc/apt/keyrings" "创建 keyrings 目录" || log "${YELLOW}警告: 无法创建 keyrings 目录${NC}"
-                run_cmd "cat /tmp/zt-gpg-key | gpg --dearmor > /etc/apt/trusted.gpg.d/zerotier.gpg" "添加 ZeroTier GPG 密钥到 trusted.gpg.d" || {
-                    # 如果新方法失败，尝试使用旧方法
-                    log "${YELLOW}警告: 无法使用新方法添加 GPG 密钥，尝试使用旧方法${NC}"
-                    run_cmd "apt-key add /tmp/zt-gpg-key" "添加 ZeroTier GPG 密钥 (旧方法)" || {
-                        log "${YELLOW}警告: 无法添加 GPG 密钥，尝试使用一键安装脚本${NC}"
-                        run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
-                        return
-                    }
-                }
-            else
-                # 如果 trusted.gpg.d 目录不存在，使用旧方法
-                run_cmd "apt-key add /tmp/zt-gpg-key" "添加 ZeroTier GPG 密钥 (旧方法)" || {
-                    log "${YELLOW}警告: 无法添加 GPG 密钥，尝试使用一键安装脚本${NC}"
-                    run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
-                    return
-                }
-            }
-
-            if [ "$OS" == "ubuntu" ]; then
-                run_cmd "echo 'deb http://download.zerotier.com/debian/bionic bionic main' > /etc/apt/sources.list.d/zerotier.list" "添加 ZeroTier Ubuntu 仓库" || {
-                    log "${YELLOW}警告: 无法添加仓库，尝试使用一键安装脚本${NC}"
-                    run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
-                    return
-                }
-            else
-                run_cmd "echo 'deb http://download.zerotier.com/debian/buster buster main' > /etc/apt/sources.list.d/zerotier.list" "添加 ZeroTier Debian 仓库" || {
-                    log "${YELLOW}警告: 无法添加仓库，尝试使用一键安装脚本${NC}"
-                    run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
-                    return
-                }
-            fi
-
-            # 安装 ZeroTier
-            run_cmd "apt-get update" "更新软件包列表" || log "${YELLOW}警告: 无法更新软件包列表${NC}"
-            run_cmd "apt-get install -y zerotier-one" "安装 ZeroTier" || {
-                log "${YELLOW}警告: 使用 apt 安装失败，尝试使用一键安装脚本${NC}"
-                run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
-            }
+            log "${BLUE}使用一键安装脚本安装 ZeroTier...${NC}"
+            run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
             ;;
 
         centos|rhel|fedora)
-            log "${BLUE}使用 yum/dnf 安装 ZeroTier...${NC}"
-
-            # 添加 ZeroTier 仓库
-            if [ "$OS" == "fedora" ]; then
-                run_cmd "dnf install -y yum-utils" "安装 yum-utils" || log "${YELLOW}警告: 无法安装 yum-utils${NC}"
-                run_cmd "dnf config-manager --add-repo https://download.zerotier.com/redhat/el/zerotier.repo" "添加 ZeroTier 仓库" || {
-                    log "${YELLOW}警告: 无法添加仓库，尝试使用一键安装脚本${NC}"
-                    run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
-                    return
-                }
-
-                # 安装 ZeroTier
-                run_cmd "dnf install -y zerotier-one" "安装 ZeroTier" || {
-                    log "${YELLOW}警告: 使用 dnf 安装失败，尝试使用一键安装脚本${NC}"
-                    run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
-                }
-            else
-                run_cmd "yum install -y yum-utils" "安装 yum-utils" || log "${YELLOW}警告: 无法安装 yum-utils${NC}"
-                run_cmd "yum-config-manager --add-repo https://download.zerotier.com/redhat/el/zerotier.repo" "添加 ZeroTier 仓库" || {
-                    log "${YELLOW}警告: 无法添加仓库，尝试使用一键安装脚本${NC}"
-                    run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
-                    return
-                }
-
-                # 安装 ZeroTier
-                run_cmd "yum install -y zerotier-one" "安装 ZeroTier" || {
-                    log "${YELLOW}警告: 使用 yum 安装失败，尝试使用一键安装脚本${NC}"
-                    run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
-                }
-            fi
+            log "${BLUE}使用一键安装脚本安装 ZeroTier...${NC}"
+            run_cmd "curl -s https://install.zerotier.com | bash" "使用一键安装脚本" || error_exit "ZeroTier 安装失败"
             ;;
 
         macos)
@@ -393,8 +317,8 @@ install_zerotier() {
     log "${GREEN}ZeroTier 安装成功${NC}"
 
     # 显示节点 ID
-    NODE_ID=$(zerotier-cli info | awk '{print $3}')
-    log "${GREEN}ZeroTier 节点 ID: ${NODE_ID}${NC}"
+    NODE_IP=$(zerotier-cli listnetworks | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}')
+    log "${GREEN}ZeroTier 节点 IP: ${NODE_IP}${NC}"
 }
 
 # 函数: 加入网络
@@ -649,19 +573,19 @@ detect_private_subnet() {
 
 # 函数: 显示代理服务器配置说明
 show_proxy_instructions() {
-    NODE_ID=$(zerotier-cli info | awk '{print $3}')
+    NODE_IP=$(zerotier-cli listnetworks | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}')
 
     log "${BLUE}ZeroTier 代理服务器配置说明:${NC}"
     log "${YELLOW}请在 ZeroTier Central 中执行以下操作:${NC}"
     log "${YELLOW}1. 登录 https://my.zerotier.com/${NC}"
     log "${YELLOW}2. 找到您的网络，点击进入网络设置页面${NC}"
     log "${YELLOW}3. 在 'Managed Routes' 区域:${NC}"
-    log "${YELLOW}   - 添加路由: 0.0.0.0/0 via ${NODE_ID} (允许通过此服务器访问互联网)${NC}"
+    log "${YELLOW}   - 添加路由: 0.0.0.0/0 via ${NODE_IP} (允许通过此服务器访问互联网)${NC}"
 
     # 检测私有网络子网
     PRIVATE_SUBNET=$(detect_private_subnet)
     if [ -n "$PRIVATE_SUBNET" ]; then
-        log "${YELLOW}   - 添加路由: ${PRIVATE_SUBNET} via ${NODE_ID} (允许访问此服务器所在的私有网络)${NC}"
+        log "${YELLOW}   - 添加路由: ${PRIVATE_SUBNET} via ${NODE_IP} (允许访问此服务器所在的私有网络)${NC}"
     fi
 
     log "${YELLOW}4. 保存设置${NC}"

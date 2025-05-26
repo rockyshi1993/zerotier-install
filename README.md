@@ -4,10 +4,9 @@
 - [简介](#简介)
 - [系统要求](#系统要求)
 - [安装步骤](#安装步骤)
+  - [Linux 系统安装](#linux-系统安装)
   - [Windows 系统安装](#windows-系统安装)
   - [macOS 系统安装](#macos-系统安装)
-  - [Linux 系统安装](#linux-系统安装)
-  - [Docker 安装](#docker-安装)
   - [Android 安装](#android-安装)
   - [iOS 安装](#ios-安装)
 - [安装后配置](#安装后配置)
@@ -49,7 +48,70 @@ ZeroTier 支持多种操作系统和平台，基本系统要求如下：
 - 互联网连接
 - 对于最佳性能，建议允许 UDP 通信（端口 9993）
 
-## 安装步骤
+## 快速安装指南
+
+> 想要快速开始？根据您的操作系统选择以下快速安装方式：
+
+| 操作系统 | 快速安装方法 |
+|---------|------------|
+| **Windows** | 下载并运行 [Windows 安装程序](https://www.zerotier.com/download/) (.msi) |
+| **macOS** | 下载并运行 [macOS 安装程序](https://www.zerotier.com/download/) (.pkg) |
+| **Linux** | 运行命令: `curl -s https://raw.githubusercontent.com/rockyshi1993/zerotier-install/main/install.sh \| sudo bash` |
+| **Android** | 从 [Google Play](https://play.google.com/store/apps/details?id=com.zerotier.one) 安装 |
+| **iOS** | 从 [App Store](https://apps.apple.com/us/app/zerotier-one/id1084101492) 安装 |
+
+安装后，您需要[创建或加入网络](#创建或加入网络)才能开始使用 ZeroTier。
+
+## 详细安装步骤
+
+### Linux 系统安装
+
+#### 安装方法比较
+
+| 安装方法 | 优点 | 适用场景 |
+|---------|------|---------|
+| **本仓库脚本** | • 自动化安装和配置<br>• 支持代理服务器功能<br>• 提供交互式菜单 | 需要完整功能和简化配置的用户 |
+| **官方脚本** | • 官方支持<br>• 简单直接 | 只需基本功能的用户 |
+
+#### 方法 1: 使用本仓库提供的增强安装脚本（推荐）
+
+本仓库提供的脚本不仅可以安装 ZeroTier，还提供以下增强功能：
+
+- 自动检测系统类型并使用适当的安装方法
+- 交互式配置选项
+- 代理服务器功能配置
+- 自动加入网络选项
+- 故障排除和诊断功能
+
+```bash
+# 一行命令完成安装
+curl -s https://raw.githubusercontent.com/rockyshi1993/zerotier-install/main/install.sh | sudo bash
+```
+
+#### 方法 2: 使用官方一键安装脚本
+
+如果您只需要基本安装，可以使用官方提供的一键安装脚本：
+
+```bash
+curl -s https://install.zerotier.com | sudo bash
+```
+
+
+#### 安装后启动服务
+
+无论使用哪种安装方法，都需要启动服务并加入网络：
+
+```bash
+# 启动 ZeroTier 服务
+sudo systemctl enable zerotier-one
+sudo systemctl start zerotier-one
+
+# 加入网络
+sudo zerotier-cli join <network-id>
+```
+
+> **提示**: 使用本仓库的安装脚本时，这些步骤会自动完成或通过交互式菜单引导您完成。
+
 
 ### Windows 系统安装
 
@@ -83,172 +145,242 @@ ZeroTier 支持多种操作系统和平台，基本系统要求如下：
 
 **注意**：macOS 可能会要求您在"系统偏好设置 > 安全性与隐私"中批准 ZeroTier 的系统扩展。
 
-### Linux 系统安装
 
-**使用本仓库提供的安装脚本（推荐）：**
+### 移动设备安装
 
-本仓库提供了一个功能更强大的安装脚本，它不仅可以安装 ZeroTier，还可以配置代理服务器功能。打开终端，执行以下命令：
+#### Android 安装
 
-```bash
-curl -s https://raw.githubusercontent.com/rockyshi1993/zerotier-install/main/install.sh | sudo bash
-```
+1. **获取应用**:
+   - 在 Google Play 商店中搜索 "ZeroTier"
+   - 或直接访问 [ZeroTier 在 Google Play 的页面](https://play.google.com/store/apps/details?id=com.zerotier.one)
+   - 点击"安装"按钮
 
-**使用官方一键安装脚本：**
+2. **配置应用**:
+   - 安装完成后，打开 ZeroTier 应用
+   - 点击"+"按钮，输入您的网络 ID
+   - 点击"Add Network"按钮
+   - 在权限请求提示中，点击"允许"授予 VPN 权限
 
-如果您只需要基本安装，也可以使用官方提供的一键安装脚本：
+3. **验证连接**:
+   - 成功加入网络后，状态会显示为"ONLINE"
+   - 您可以在应用中查看分配的 IP 地址
 
-```bash
-curl -s https://install.zerotier.com | sudo bash
-```
+> **注意**: Android 设备上的 ZeroTier 会在后台运行，并在设备重启后自动启动。如果您遇到连接问题，可以尝试在应用中重新连接网络。
 
-**使用包管理器手动安装：**
+#### iOS 安装
 
-Debian/Ubuntu:
-```bash
-# 添加 ZeroTier 仓库
-curl -s 'https://raw.githubusercontent.com/zerotier/ZeroTierOne/master/doc/contact%40zerotier.com.gpg' | gpg --import
-apt-key add /tmp/zt-gpg-key
-echo 'deb http://download.zerotier.com/debian/buster buster main' > /etc/apt/sources.list.d/zerotier.list
+1. **获取应用**:
+   - 在 App Store 中搜索 "ZeroTier"
+   - 或直接访问 [ZeroTier 在 App Store 的页面](https://apps.apple.com/us/app/zerotier-one/id1084101492)
+   - 点击"获取"按钮，然后点击"安装"
 
-# 安装 ZeroTier
-apt-get update
-apt-get install zerotier-one
-```
+2. **配置应用**:
+   - 安装完成后，打开 ZeroTier 应用
+   - 点击"+"按钮，输入您的网络 ID
+   - 点击"Add"按钮
+   - 在权限请求提示中，点击"允许"授予 VPN 权限
 
-CentOS/RHEL:
-```bash
-# 添加 ZeroTier 仓库
-yum install -y yum-utils
-yum-config-manager --add-repo https://download.zerotier.com/redhat/el/zerotier.repo
+3. **验证连接**:
+   - 成功加入网络后，状态会显示为"ONLINE"
+   - 您可以在应用中查看分配的 IP 地址
 
-# 安装 ZeroTier
-yum install -y zerotier-one
-```
-
-Arch Linux:
-```bash
-pacman -S zerotier-one
-```
-
-**安装后启动服务：**
-
-```bash
-# 启动 ZeroTier 服务
-sudo systemctl enable zerotier-one
-sudo systemctl start zerotier-one
-
-# 加入网络
-sudo zerotier-cli join <network-id>
-```
-
-### Docker 安装
-
-如果您想在 Docker 容器中运行 ZeroTier，可以使用官方 Docker 镜像：
-
-```bash
-# 拉取镜像
-docker pull zerotier/zerotier-one
-
-# 运行容器
-docker run -d \
-  --name zerotier-one \
-  --restart=always \
-  --device=/dev/net/tun \
-  --net=host \
-  --cap-add=NET_ADMIN \
-  --cap-add=SYS_ADMIN \
-  -v /var/lib/zerotier-one:/var/lib/zerotier-one \
-  zerotier/zerotier-one
-
-# 加入网络
-docker exec zerotier-one zerotier-cli join <network-id>
-```
-
-### Android 安装
-
-1. 在 Google Play 商店中搜索 "ZeroTier"，或直接访问 [ZeroTier 在 Google Play 的页面](https://play.google.com/store/apps/details?id=com.zerotier.one)
-2. 点击"安装"按钮
-3. 安装完成后，打开 ZeroTier 应用
-4. 点击"+"按钮，输入您的网络 ID
-5. 点击"Add Network"按钮
-
-**注意**：Android 版本需要授予 VPN 权限，请在提示时点击"允许"。
-
-### iOS 安装
-
-1. 在 App Store 中搜索 "ZeroTier"，或直接访问 [ZeroTier 在 App Store 的页面](https://apps.apple.com/us/app/zerotier-one/id1084101492)
-2. 点击"获取"按钮，然后点击"安装"
-3. 安装完成后，打开 ZeroTier 应用
-4. 点击"+"按钮，输入您的网络 ID
-5. 点击"Add"按钮
-
-**注意**：iOS 版本需要授予 VPN 权限，请在提示时点击"允许"。
+> **注意**: 由于 iOS 的限制，ZeroTier 在后台运行时可能会被系统暂停。如果您需要持续连接，可以在设备设置中启用"后台应用刷新"功能。
 
 ## 安装后配置
 
+完成 ZeroTier 安装后，您需要创建或加入一个网络，并进行适当的配置才能开始使用。以下是配置 ZeroTier 的完整流程：
+
 ### 创建或加入网络
 
-**创建网络：**
+#### 创建新网络（管理员）
+
+如果您是首次使用 ZeroTier 或需要创建一个新的虚拟网络：
 
 1. 访问 [ZeroTier Central](https://my.zerotier.com/)
-2. 注册账号或登录
-3. 点击"Create A Network"按钮
-4. 系统会自动生成一个 16 位的网络 ID
-5. 您可以在网络设置页面配置网络名称、描述和其他参数
+2. 注册账号或登录现有账号
+3. 在控制面板中点击 **"Create A Network"** 按钮
+4. 系统会自动生成一个 16 位的网络 ID（例如：`a09acf0233e5d948`）
+5. 记录此网络 ID，您将需要它来配置客户端
 
-**加入网络：**
+> **提示**：创建网络后，您可以在网络设置页面自定义网络名称、描述和访问控制设置。
 
-根据您的操作系统，使用以下命令或方法加入网络：
+#### 加入现有网络（客户端）
 
-- **Windows**：右键点击系统托盘图标，选择"Join Network..."，输入网络 ID
-- **macOS**：点击菜单栏图标，选择"Join Network..."，输入网络 ID
-- **Linux**：`sudo zerotier-cli join <network-id>`
-- **Android/iOS**：打开应用，点击"+"按钮，输入网络 ID
+根据您的设备类型，使用以下方法加入网络：
 
-### 配置网络权限
+| 操作系统 | 加入网络方法 |
+|---------|------------|
+| **Windows** | 右键点击系统托盘图标 → 选择"Join Network..." → 输入网络 ID → 点击"Join" |
+| **macOS** | 点击菜单栏图标 → 选择"Join Network..." → 输入网络 ID → 点击"Join" |
+| **Linux** | 在终端中运行：`sudo zerotier-cli join <network-id>` |
+| **Android** | 打开应用 → 点击"+"按钮 → 输入网络 ID → 点击"Add Network" |
+| **iOS** | 打开应用 → 点击"+"按钮 → 输入网络 ID → 点击"Add" |
 
-加入网络后，网络管理员需要在 ZeroTier Central 中授权设备：
+### 配置网络权限（管理员）
 
-1. 登录 [ZeroTier Central](https://my.zerotier.com/)
-2. 选择相应的网络
-3. 在"Members"选项卡中，找到新加入的设备（通过其 Node ID）
-4. 勾选"Auth"复选框，授权该设备加入网络
-
-### 路由设置
-
-ZeroTier 网络可以配置路由，使网络成员能够访问特定的子网：
+出于安全考虑，默认情况下，新加入的设备需要网络管理员授权才能访问网络：
 
 1. 登录 [ZeroTier Central](https://my.zerotier.com/)
 2. 选择相应的网络
-3. 在"Settings"选项卡中，找到"Managed Routes"部分
-4. 点击"Add Route"按钮
-5. 输入目标网络（例如：192.168.1.0/24）和网关（通常是充当网关的 ZeroTier 成员的 IP 地址）
-6. 点击"Submit"保存路由
+3. 在 **"Members"** 选项卡中，您将看到所有尝试加入网络的设备
+4. 找到新加入的设备（通过其 Node ID 或名称）
+5. 勾选 **"Auth"** 复选框，授权该设备加入网络
+6. 可选：为设备添加描述性名称，便于管理
+
+![ZeroTier授权示例](https://docs.zerotier.com/img/zt-central-auth-member.png)
+
+> **注意**：只有在授权后，设备才能与网络中的其他成员通信。
+
+### 路由设置（高级）
+
+ZeroTier 网络可以配置路由，使网络成员能够访问特定的子网或互联网：
+
+#### 基本路由配置
+
+1. 登录 [ZeroTier Central](https://my.zerotier.com/)
+2. 选择相应的网络
+3. 在 **"Settings"** 选项卡中，找到 **"Managed Routes"** 部分
+4. 点击 **"Add Route"** 按钮
+5. 配置路由：
+   - **Destination**: 目标网络（例如：`192.168.1.0/24`）
+   - **Via**: 网关（通常是充当网关的 ZeroTier 成员的 IP 地址）
+6. 点击 **"Submit"** 保存路由
+
+#### 常见路由配置场景
+
+| 目的 | 路由配置 | 说明 |
+|-----|---------|-----|
+| **访问内部网络** | `192.168.1.0/24` via `10.147.20.5` | 允许访问网关设备所在的内部网络 |
+| **互联网访问** | `0.0.0.0/0` via `10.147.20.5` | 通过网关设备访问互联网（代理服务器） |
+| **多个子网访问** | `10.0.0.0/8` via `10.147.20.5` | 访问多个私有网络子网 |
+
+> **提示**：配置路由时，确保网关设备已正确配置为允许流量转发，并且已启用适当的防火墙规则。
 
 ## 常见问题排查
 
-### 连接问题
+### 快速诊断工具
 
-1. **无法加入网络**
-   - 检查网络 ID 是否正确
-   - 确认互联网连接正常
-   - 检查防火墙是否阻止了 UDP 端口 9993
+在排查问题前，可以使用以下命令获取有用的诊断信息：
 
-2. **加入网络但无法通信**
-   - 检查是否已在 ZeroTier Central 中授权设备
-   - 检查网络设置中的 IP 分配是否正确
-   - 尝试使用 `zerotier-cli listnetworks` 命令查看网络状态
+```bash
+# 查看 ZeroTier 状态
+zerotier-cli info
 
-3. **连接速度慢**
-   - 检查是否建立了直接连接（使用 `zerotier-cli peers` 命令）
-   - 如果显示 RELAY，表示使用了中继服务器，可能会导致速度变慢
-   - 尝试调整防火墙设置，允许直接 UDP 通信
+# 查看已加入的网络
+zerotier-cli listnetworks
 
-### 常见错误代码
+# 查看对等连接
+zerotier-cli peers
 
-- **ACCESS_DENIED**：未获授权加入网络
-- **NETWORK_NOT_FOUND**：网络 ID 不存在
-- **AUTHENTICATION_REQUIRED**：需要身份验证
+# 查看路由表
+ip route show
+```
+
+### 常见问题及解决方案
+
+#### 安装问题
+
+| 问题 | 可能原因 | 解决方案 |
+|-----|---------|---------|
+| 安装脚本失败 | 网络连接问题 | 检查互联网连接，尝试使用 `--proxy` 参数指定代理 |
+| 权限错误 | 未使用 sudo/管理员权限 | 使用 `sudo` (Linux/macOS) 或以管理员身份运行 (Windows) |
+| 安装后找不到命令 | 路径问题 | 重启终端或重启系统 |
+
+#### 连接问题
+
+##### 1. 无法加入网络
+
+**症状**: 尝试加入网络时出错或加入后显示 "NOT_FOUND"
+
+**解决方案**:
+- 仔细检查网络 ID 是否正确（应为 16 位十六进制字符）
+- 确认互联网连接正常
+- 检查防火墙是否阻止了 UDP 端口 9993
+- 尝试重启 ZeroTier 服务：
+  ```bash
+  # Linux
+  sudo systemctl restart zerotier-one
+
+  # macOS
+  sudo launchctl unload /Library/LaunchDaemons/com.zerotier.one.plist
+  sudo launchctl load /Library/LaunchDaemons/com.zerotier.one.plist
+
+  # Windows (管理员 PowerShell)
+  Restart-Service ZeroTierOneService
+  ```
+
+##### 2. 加入网络但无法通信
+
+**症状**: 成功加入网络，但无法与其他设备通信
+
+**解决方案**:
+- 检查是否已在 ZeroTier Central 中授权设备（勾选 "Auth" 复选框）
+- 检查网络设置中的 IP 分配是否正确
+- 验证网络状态：
+  ```bash
+  zerotier-cli listnetworks
+  ```
+  确保状态显示为 "OK" 且有分配的 IP 地址
+- 检查本地防火墙设置，确保允许 ZeroTier 流量
+- 尝试 ping 其他网络成员的 ZeroTier IP 地址
+
+##### 3. 连接速度慢
+
+**症状**: 连接建立但速度明显慢于预期
+
+**解决方案**:
+- 检查是否建立了直接连接：
+  ```bash
+  zerotier-cli peers
+  ```
+  如果显示 "RELAY"，表示使用了中继服务器
+- 调整防火墙设置，允许直接 UDP 通信
+- 检查网络拥塞情况
+- 考虑使用多路径设置提高可靠性
+
+#### 特定平台问题
+
+##### Windows 特有问题
+
+- **服务未运行**: 打开服务管理器，确保 "ZeroTier One" 服务已启动
+- **TAP 适配器问题**: 在设备管理器中检查网络适配器，如有感叹号，尝试重新安装驱动
+- **防火墙阻止**: 检查 Windows Defender 防火墙设置，确保允许 ZeroTier
+
+##### macOS 特有问题
+
+- **系统扩展被阻止**: 在"系统偏好设置 > 安全性与隐私"中允许 ZeroTier 系统扩展
+- **权限问题**: 确保 ZeroTier 有足够的系统权限
+- **Big Sur 及更高版本**: 可能需要在"系统偏好设置 > 网络"中手动启用 ZeroTier 接口
+
+##### Linux 特有问题
+
+- **模块加载问题**: 确保 TUN/TAP 模块已加载：
+  ```bash
+  lsmod | grep tun
+  ```
+  如果未加载，运行：
+  ```bash
+  sudo modprobe tun
+  ```
+- **SELinux 干扰**: 临时禁用 SELinux 检查问题是否解决：
+  ```bash
+  sudo setenforce 0
+  ```
+
+### 常见错误代码及含义
+
+| 错误代码 | 含义 | 解决方法 |
+|---------|------|---------|
+| **ACCESS_DENIED** | 未获授权加入网络 | 联系网络管理员授权您的设备 |
+| **NETWORK_NOT_FOUND** | 网络 ID 不存在 | 检查网络 ID 是否正确 |
+| **AUTHENTICATION_REQUIRED** | 需要身份验证 | 检查凭据或重新登录 ZeroTier Central |
+| **PORT_ERROR** | 端口冲突或无法绑定 | 检查是否有其他服务占用 9993 端口 |
+| **IDENTITY_COLLISION** | 节点 ID 冲突 | 删除 `/var/lib/zerotier-one/identity.secret` 并重启服务 |
+
+> **提示**: 如果遇到无法解决的问题，可以查看日志文件获取更多信息：
+> - Linux: `/var/log/syslog` 或 `journalctl -u zerotier-one`
+> - macOS: `sudo tail -f /var/log/system.log | grep ZeroTier`
+> - Windows: 事件查看器 > 应用程序和服务日志 > ZeroTier
 
 ## 高级配置
 
