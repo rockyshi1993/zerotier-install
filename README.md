@@ -432,9 +432,9 @@ sudo bash install.sh
    DEFAULT_INTERFACE=$(ip -o route get 8.8.8.8 | awk '{print $5}')
 
    # 添加 NAT 规则
-   iptables -t nat -A POSTROUTING -o $DEFAULT_INTERFACE -j MASQUERADE
-   iptables -A FORWARD -i $ZT_INTERFACE -o $DEFAULT_INTERFACE -j ACCEPT
-   iptables -A FORWARD -i $DEFAULT_INTERFACE -o $ZT_INTERFACE -m state --state RELATED,ESTABLISHED -j ACCEPT
+   iptables -t nat -D POSTROUTING -o $DEFAULT_INTERFACE -j MASQUERADE 2>/dev/null
+   iptables -D FORWARD -i $ZT_INTERFACE -o $DEFAULT_INTERFACE -j ACCEPT 2>/dev/null
+   iptables -D FORWARD -i $DEFAULT_INTERFACE -o $ZT_INTERFACE -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null
 
    # 保存 iptables 规则
    iptables-save > /etc/iptables.rules
@@ -442,12 +442,9 @@ sudo bash install.sh
 
 3. 使 iptables 规则持久化：
    ```bash
-   # 创建网络接口启动脚本
-   cat > /etc/network/if-up.d/iptables << 'EOF'
-   #!/bin/sh
-   iptables-restore < /etc/iptables.rules
-   EOF
-   chmod +x /etc/network/if-up.d/iptables
+   # 使用 netfilter-persistent（Ubuntu 推荐方式）
+   sudo apt install iptables-persistent
+   sudo iptables-save > /etc/iptables/rules.v4
    ```
 
 #### ZeroTier Central 配置
