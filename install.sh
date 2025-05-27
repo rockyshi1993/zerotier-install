@@ -4,8 +4,8 @@
 # 基于 ZeroTier安装指南.md 文档中的步骤自动化安装和配置 ZeroTier
 # 支持 Ubuntu/Debian、CentOS/RHEL、macOS 系统
 #
-# 版本: 1.0
-# 最后更新: 2025-05-26
+# 版本: 1.1
+# 最后更新: 2025-06-01
 #
 
 # 颜色定义
@@ -69,6 +69,7 @@ show_help() {
     echo "  2. 如果指定了网络 ID 并使用 --join 选项，安装后会自动加入该网络"
     echo "  3. 如果使用 --accept 选项，脚本会尝试自动授权新节点（需要管理员权限）"
     echo "  4. 脚本可以配置 ZeroTier 作为代理服务器，允许其他 ZeroTier 客户端通过此服务器访问互联网和私有网络"
+    echo "  5. 脚本可以配置 ZeroTier 作为中继（Moon）节点，提供更稳定的连接和自定义路由"
     echo ""
 }
 
@@ -205,16 +206,28 @@ check_zerotier_installed() {
     if command -v zerotier-cli &>/dev/null; then
         log "${YELLOW}检测到 ZeroTier 已安装${NC}"
 
+        # 检查是否已创建 Moon 节点
+        MOON_CREATED=false
+        if is_moon_node_created; then
+            MOON_CREATED=true
+        fi
+
         # 显示菜单
         echo -e "${BLUE}ZeroTier 已安装在此系统上。请选择操作:${NC}"
         echo "1) 加入新网络"
         echo "2) 离开网络"
         echo "3) 查看当前网络状态"
-        echo "4) 重启 ZeroTier 服务"
-        echo "5) 卸载 ZeroTier"
-        echo "6) 退出"
+        echo "4) 配置代理服务器"
+        if [ "$MOON_CREATED" = true ]; then
+            echo "5) 移除中继（Moon）节点"
+        else
+            echo "5) 配置中继（Moon）节点"
+        fi
+        echo "6) 重启 ZeroTier 服务"
+        echo "7) 卸载 ZeroTier"
+        echo "8) 退出"
 
-        read -p "请选择 [1-6]: " choice
+        read -p "请选择 [1-8]: " choice
 
         case $choice in
             1)
@@ -227,12 +240,37 @@ check_zerotier_installed() {
                 show_status
                 ;;
             4)
-                restart_service
+                # 配置代理服务器
+                PROXY_SERVER=false
+                read -p "是否配置代理服务器以支持特殊网络环境? [y/N]: " proxy_choice
+                if [[ "$proxy_choice" == [yY] ]]; then
+                    PROXY_SERVER=true
+                    configure_proxy_server
+                    show_proxy_instructions
+                fi
                 ;;
             5)
-                uninstall_zerotier
+                if [ "$MOON_CREATED" = true ]; then
+                    # 移除中继（Moon）节点
+                    read -p "确定要移除 ZeroTier 中继（Moon）节点吗? [y/N]: " moon_choice
+                    if [[ "$moon_choice" == [yY] ]]; then
+                        remove_moon_node
+                    fi
+                else
+                    # 配置中继（Moon）节点
+                    read -p "是否将当前节点配置为 ZeroTier 中继（Moon）节点? [y/N]: " moon_choice
+                    if [[ "$moon_choice" == [yY] ]]; then
+                        configure_moon_node
+                    fi
+                fi
                 ;;
             6)
+                restart_service
+                ;;
+            7)
+                uninstall_zerotier
+                ;;
+            8)
                 log "${GREEN}退出脚本${NC}"
                 exit 0
                 ;;
@@ -571,6 +609,7 @@ detect_private_subnet() {
     echo "$PRIVATE_SUBNET"
 }
 
+
 # 函数: 显示代理服务器配置说明
 show_proxy_instructions() {
     NODE_ID=$(zerotier-cli info | awk '{print $3}')
@@ -597,6 +636,297 @@ show_proxy_instructions() {
     log "${YELLOW}完成上述配置后，您的 ZeroTier 客户端将能够:${NC}"
     log "${YELLOW}- 通过此服务器访问互联网${NC}"
     log "${YELLOW}- 访问此服务器所在的私有网络资源${NC}"
+}
+
+# 函数: 检查是否已创建 Moon 节点
+is_moon_node_created() {
+    # 检查 moons.d 目录是否存在
+    if [ -d "/var/lib/zerotier-one/moons.d" ]; then
+        # 检查是否有 .moon 文件
+        if [ "$(ls -A /var/lib/zerotier-one/moons.d/*.moon 2>/dev/null)" ]; then
+            return 0  # 已创建 Moon 节点
+        fi
+    fi
+    return 1  # 未创建 Moon 节点
+}
+
+# 函数: 移除 Moon 节点
+remove_moon_node() {
+    log "${BLUE}移除 ZeroTier Moon 节点...${NC}"
+
+    # 检查是否为 macOS
+    if [ "$OS" == "macos" ]; then
+        log "${YELLOW}警告: 在 macOS 上移除 Moon 节点需要手动操作${NC}"
+        log "${YELLOW}请参考 ZeroTier 文档进行手动配置${NC}"
+        return
+    fi
+
+    # 检查 moons.d 目录是否存在
+    if [ ! -d "/var/lib/zerotier-one/moons.d" ]; then
+        log "${YELLOW}警告: Moon 节点目录不存在${NC}"
+        return
+    fi
+
+    # 移除所有 .moon 文件
+    log "${BLUE}移除 Moon 文件...${NC}"
+    run_cmd "rm -f /var/lib/zerotier-one/moons.d/*.moon" "移除 Moon 文件" || return
+
+    # 清理临时文件
+    log "${BLUE}清理临时文件...${NC}"
+    run_cmd "rm -f /tmp/moon.json /tmp/moon.conf /tmp/*.moon" "清理临时文件"
+
+    # 清理工作目录
+    if [ -d "${SCRIPT_DIR}/moon_setup" ]; then
+        log "${BLUE}清理工作目录...${NC}"
+        run_cmd "rm -rf ${SCRIPT_DIR}/moon_setup" "清理工作目录"
+    fi
+
+    # 清理客户端分发包
+    # 直接删除所有匹配的文件和目录
+    log "${BLUE}清理客户端分发包...${NC}"
+    run_cmd "rm -rf ${SCRIPT_DIR}/zerotier_moon_*.zip ${SCRIPT_DIR}/zerotier_moon_*" "清理所有客户端分发包"
+
+    # 重启 ZeroTier 服务
+    log "${BLUE}重启 ZeroTier 服务以应用更改...${NC}"
+    restart_service
+
+    log "${GREEN}Moon 节点已成功移除${NC}"
+    log "${GREEN}所有相关配置文件已清理干净${NC}"
+}
+
+# 函数: 配置 Moon 节点
+function configure_moon_node() {
+    log "${BLUE}正在配置 ZeroTier Moon 节点...${NC}"
+
+    # 基本检查
+    if ! zerotier-cli info &>/dev/null; then
+        log "${RED}错误: ZeroTier 未运行${NC}"
+        return 1
+    fi
+
+    # 获取节点信息
+    NODE_ID=$(zerotier-cli info | awk '{print $3}')
+    PUBLIC_IP=$(curl -s https://api.ipify.org)
+
+    if [[ -z "$NODE_ID" || ! "$PUBLIC_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        log "${RED}错误: 无法获取节点信息${NC}"
+        return 1
+    fi
+
+    log "${BLUE}节点信息: ID=$NODE_ID, IP=$PUBLIC_IP${NC}"
+
+    # 创建工作目录
+    WORK_DIR="${SCRIPT_DIR}/moon_setup"
+    mkdir -p "$WORK_DIR"
+
+    # 切换到 ZeroTier 目录
+    cd /var/lib/zerotier-one || return 1
+
+    # 创建并修改 Moon 配置
+    log "${BLUE}创建 Moon 配置...${NC}"
+    zerotier-idtool initmoon identity.public > "$WORK_DIR/moon.conf"
+
+    # 安装 jq 如果需要
+    if ! command -v jq &>/dev/null; then
+        log "${YELLOW}正在安装 jq...${NC}"
+        if command -v apt-get &>/dev/null; then
+            apt-get update -y && apt-get install -y jq
+        elif command -v yum &>/dev/null; then
+            yum install -y jq
+        else
+            log "${RED}错误: 请手动安装 jq${NC}"
+            return 1
+        fi
+    fi
+
+    # 添加端点信息
+    jq --arg ip "$PUBLIC_IP/9993" '.stableEndpoints = [$ip]' "$WORK_DIR/moon.conf" > "$WORK_DIR/moon_updated.conf"
+    mv "$WORK_DIR/moon_updated.conf" "$WORK_DIR/moon.conf"
+
+    # 提取 Moon ID
+    MOON_ID=$(jq -r '.id' "$WORK_DIR/moon.conf")
+    log "${BLUE}Moon ID: $MOON_ID${NC}"
+
+    # 生成 Moon 文件
+    log "${BLUE}生成 Moon 文件...${NC}"
+    cd "$WORK_DIR" || return 1
+    zerotier-idtool genmoon "$WORK_DIR/moon.conf"
+
+    # 查找生成的文件
+    MOON_FILE=$(find "$WORK_DIR" -name "*${MOON_ID}.moon" -type f)
+    if [ -z "$MOON_FILE" ]; then
+        log "${RED}错误: Moon 文件未生成${NC}"
+        return 1
+    fi
+
+    # 部署到服务器
+    log "${BLUE}部署 Moon 文件到服务器...${NC}"
+    mkdir -p /var/lib/zerotier-one/moons.d
+    cp "$MOON_FILE" /var/lib/zerotier-one/moons.d/
+
+    # 创建客户端分发包
+    log "${BLUE}创建客户端分发包...${NC}"
+
+    # 为不同平台创建安装脚本
+    # Windows 批处理脚本
+    cat > "$WORK_DIR/install_moon_windows.bat" << EOF
+@echo off
+echo 正在安装 ZeroTier Moon 节点配置...
+if not exist "%ProgramData%\ZeroTier\One\moons.d" mkdir "%ProgramData%\ZeroTier\One\moons.d"
+copy /Y "$(basename "$MOON_FILE")" "%ProgramData%\ZeroTier\One\moons.d\"
+echo Moon 节点配置已安装，请重启 ZeroTier 服务
+net stop ZeroTierOne
+net start ZeroTierOne
+echo 完成！
+pause
+EOF
+
+    # Linux/macOS 脚本
+    cat > "$WORK_DIR/install_moon.sh" << EOF
+#!/bin/bash
+echo "正在安装 ZeroTier Moon 节点配置..."
+
+# 检测操作系统类型
+if [ "$(uname)" == "Darwin" ]; then
+    # macOS
+    ZEROTIER_DIR="/Library/Application Support/ZeroTier/One/moons.d"
+    mkdir -p "\$ZEROTIER_DIR"
+    cp "$(basename "$MOON_FILE")" "\$ZEROTIER_DIR/"
+    echo "重启 ZeroTier 服务..."
+    launchctl unload /Library/LaunchDaemons/com.zerotier.one.plist
+    launchctl load /Library/LaunchDaemons/com.zerotier.one.plist
+else
+    # Linux
+    ZEROTIER_DIR="/var/lib/zerotier-one/moons.d"
+    sudo mkdir -p "\$ZEROTIER_DIR"
+    sudo cp "$(basename "$MOON_FILE")" "\$ZEROTIER_DIR/"
+    echo "重启 ZeroTier 服务..."
+    if command -v systemctl &>/dev/null; then
+        sudo systemctl restart zerotier-one
+    elif command -v service &>/dev/null; then
+        sudo service zerotier-one restart
+    else
+        sudo killall zerotier-one
+        sudo zerotier-one -d
+    fi
+fi
+
+echo "Moon 节点配置安装完成！"
+EOF
+
+    chmod +x "$WORK_DIR/install_moon.sh"
+
+    # 创建说明文档
+    cat > "$WORK_DIR/README.md" << EOF
+# ZeroTier Moon 节点配置
+
+## 什么是 Moon 节点？
+
+Moon 节点是 ZeroTier 网络中的自定义根服务器，可以：
+- 提供更稳定的连接和更低的延迟
+- 改善 NAT 穿透能力
+- 在复杂网络环境中提供更可靠的连接路径
+- 增强私有网络的安全性和可控性
+
+## 配置信息
+
+- **Moon ID**: $MOON_ID
+- **节点 ID**: $NODE_ID
+- **服务器 IP**: $PUBLIC_IP
+
+## 安装方法
+
+### Windows 用户
+
+1. 确保已安装并运行 ZeroTier
+2. 双击运行 \`install_moon_windows.bat\` 脚本
+3. 脚本将自动复制配置文件并重启 ZeroTier 服务
+
+### macOS 用户
+
+1. 确保已安装并运行 ZeroTier
+2. 打开终端，进入此文件夹
+3. 运行命令: \`./install_moon.sh\`
+
+### Linux 用户
+
+1. 确保已安装并运行 ZeroTier
+2. 打开终端，进入此文件夹
+3. 运行命令: \`./install_moon.sh\`
+
+### 手动安装
+
+如果自动脚本不起作用，您可以手动安装：
+
+1. 找到 ZeroTier 的 moons.d 目录:
+   - Windows: \`C:\\ProgramData\\ZeroTier\\One\\moons.d\`
+   - macOS: \`/Library/Application Support/ZeroTier/One/moons.d\`
+   - Linux: \`/var/lib/zerotier-one/moons.d\`
+
+2. 将 \`$(basename "$MOON_FILE")\` 文件复制到该目录
+3. 重启 ZeroTier 服务
+
+## 验证安装
+
+安装完成后，可以使用以下命令验证 Moon 节点是否正常工作：
+
+\`\`\`
+zerotier-cli listpeers
+\`\`\`
+
+在输出中应该能看到与您的 Moon 节点的连接。
+
+## 故障排除
+
+如果遇到问题，请尝试：
+
+1. 确认 ZeroTier 已正确安装并运行
+2. 验证 Moon 文件已正确复制到 moons.d 目录
+3. 重启计算机和网络设备
+4. 检查防火墙是否允许 ZeroTier 通信（UDP 9993端口）
+EOF
+
+    # 创建一个 ZIP 压缩包
+    log "${BLUE}打包客户端文件...${NC}"
+    if command -v zip &>/dev/null; then
+        cd "$WORK_DIR" || return 1
+        zip -r "${SCRIPT_DIR}/zerotier_moon_${MOON_ID}.zip" "$(basename "$MOON_FILE")" install_moon.sh install_moon_windows.bat README.md
+    else
+        log "${YELLOW}警告: 未安装 zip 命令，无法创建压缩包${NC}"
+        # 创建一个目录作为替代
+        DIST_DIR="${SCRIPT_DIR}/zerotier_moon_${MOON_ID}"
+        mkdir -p "$DIST_DIR"
+        cp "$MOON_FILE" "$WORK_DIR/install_moon.sh" "$WORK_DIR/install_moon_windows.bat" "$WORK_DIR/README.md" "$DIST_DIR/"
+    fi
+
+    # 重启服务器上的 ZeroTier
+    log "${BLUE}重启 ZeroTier 服务...${NC}"
+    if command -v systemctl &>/dev/null; then
+        systemctl restart zerotier-one
+    elif command -v service &>/dev/null; then
+        service zerotier-one restart
+    else
+        killall zerotier-one
+        sleep 1
+        zerotier-one -d
+    fi
+
+    # 显示成功信息和下一步指导
+    log "${GREEN}Moon 节点配置成功！${NC}"
+
+    if [ -f "${SCRIPT_DIR}/zerotier_moon_${MOON_ID}.zip" ]; then
+        log "${GREEN}客户端配置包已创建: ${SCRIPT_DIR}/zerotier_moon_${MOON_ID}.zip${NC}"
+    else
+        log "${GREEN}客户端配置文件已创建在: ${DIST_DIR}${NC}"
+    fi
+
+    log "${YELLOW}将配置包分发给客户端，并按照 README.md 中的说明安装${NC}"
+
+    # 清理工作目录，配置完成后不再需要
+    log "${BLUE}清理工作目录...${NC}"
+    run_cmd "rm -rf ${WORK_DIR}" "清理工作目录" || log "${YELLOW}警告: 无法清理工作目录${NC}"
+
+    return 0
 }
 
 # 函数: 解析命令行参数
@@ -632,7 +962,7 @@ main() {
     mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null
 
     log "${BLUE}ZeroTier 自动安装脚本启动${NC}"
-    log "${BLUE}版本: 1.0${NC}"
+    log "${BLUE}版本: 1.1${NC}"
 
     # 解析命令行参数
     parse_args "$@"
@@ -657,14 +987,9 @@ main() {
     # 安装 ZeroTier
     install_zerotier
 
-    # 询问用户是否要配置代理服务器
-    if [ "$OS" != "macos" ]; then
-        read -p "是否将此 ZeroTier 节点配置为代理服务器? [y/N]: " proxy_choice
-        if [[ "$proxy_choice" == [yY] ]]; then
-            PROXY_SERVER=true
-            configure_proxy_server
-        fi
-    fi
+    # 首次执行脚本时，默认不配置代理服务器
+    # 根据优化要求，首次执行不询问用户，直接进入普通安装流程
+    PROXY_SERVER=false
 
     # 如果启用了自动加入，加入网络
     if [ "$AUTO_JOIN" = true ] && [ -n "$NETWORK_ID" ]; then

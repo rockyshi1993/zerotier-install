@@ -16,6 +16,7 @@
 - [常见问题排查](#常见问题排查)
 - [高级配置](#高级配置)
   - [配置 ZeroTier 作为代理服务器](#配置-zerotier-作为代理服务器)
+  - [配置 ZeroTier 中继（Moon）节点](#配置-zerotier-中继moon节点)
   - [命令行工具](#命令行工具)
   - [本地配置文件](#本地配置文件)
   - [多路径设置](#多路径设置)
@@ -32,6 +33,7 @@ ZeroTier 是一个智能网络虚拟化工具，它可以将分散在各地的�
 - 跨平台支持：几乎支持所有主流操作系统和设备
 - 简单易用：安装配置过程简单直观
 - 可扩展性：可以连接数千台设备到同一个虚拟网络
+- 中继节点：支持配置自定义中继（Moon）节点，提高连接稳定性和性能
 
 ## 系统要求
 
@@ -70,7 +72,7 @@ ZeroTier 支持多种操作系统和平台，基本系统要求如下：
 
 | 安装方法 | 优点 | 适用场景 |
 |---------|------|---------|
-| **本仓库脚本** | • 自动化安装和配置<br>• 支持代理服务器功能<br>• 提供交互式菜单 | 需要完整功能和简化配置的用户 |
+| **本仓库脚本** | • 自动化安装和配置<br>• 支持代理服务器功能<br>• 支持中继（Moon）节点配置<br>• 提供交互式菜单 | 需要完整功能和简化配置的用户 |
 | **官方脚本** | • 官方支持<br>• 简单直接 | 只需基本功能的用户 |
 
 #### 方法 1: 使用本仓库提供的增强安装脚本（推荐）
@@ -80,6 +82,7 @@ ZeroTier 支持多种操作系统和平台，基本系统要求如下：
 - 自动检测系统类型并使用适当的安装方法
 - 交互式配置选项
 - 代理服务器功能配置
+- 中继（Moon）节点配置和管理
 - 自动加入网络选项
 - 故障排除和诊断功能
 
@@ -425,16 +428,16 @@ sudo bash install.sh
     [Unit]
     Description=Enable IP Forwarding
     After=network.target
-    
+
     [Service]
     Type=oneshot
     ExecStart=/usr/sbin/sysctl -w net.ipv4.ip_forward=1
     RemainAfterExit=yes
-    
+
     [Install]
     WantedBy=multi-user.target
     EOL'
-    
+
     # 2. 启用并启动服务
     sudo systemctl enable ip-forward.service
     sudo systemctl start ip-forward.service
@@ -532,6 +535,143 @@ ZeroTier 的配置文件位于以下位置：
 - `identity.public`：公钥
 - `identity.secret`：私钥（请保密）
 - `networks.d/`：网络配置目录
+
+### 配置 ZeroTier 中继（Moon）节点
+
+Moon 节点是 ZeroTier 网络中的自定义根服务器，可以提供更稳定的连接和更好的网络性能，特别是在复杂的网络环境中。
+
+#### Moon 节点的优势
+
+- **改善连接稳定性**：提供额外的连接路径，减少连接失败的可能性
+- **降低延迟**：在地理位置分散的网络中提供更近的连接点
+- **增强 NAT 穿透能力**：帮助位于严格 NAT 后的设备建立连接
+- **提高网络控制**：减少对 ZeroTier 公共根服务器的依赖
+- **增强私有网络安全性**：可以完全在私有网络内运行，无需公共互联网
+
+#### 使用安装脚本配置 Moon 节点
+
+如果您使用本仓库提供的安装脚本，可以轻松配置 Moon 节点：
+
+```bash
+# 下载安装脚本
+curl -s -o install.sh https://raw.githubusercontent.com/rockyshi1993/zerotier-install/main/install.sh
+
+# 执行安装脚本
+sudo bash install.sh
+```
+
+如果 ZeroTier 已安装，脚本会显示菜单选项。选择"配置中继（Moon）节点"选项，然后按照提示操作。脚本将自动：
+
+1. 获取节点信息（ID 和公共 IP）
+2. 创建必要的配置文件
+3. 生成 Moon 节点签名
+4. 部署 Moon 文件到当前节点
+5. 创建客户端配置包，便于分发给其他设备
+6. 重启 ZeroTier 服务以应用配置
+
+完成后，脚本会显示 Moon ID 和客户端配置包的位置。
+
+#### 手动配置 Moon 节点
+
+如果您想手动配置 Moon 节点，可以按照以下步骤操作：
+
+1. 获取节点 ID：
+   ```bash
+   zerotier-cli info | awk '{print $3}'
+   ```
+
+2. 创建 moon.json 配置文件：
+   ```bash
+   # 获取公共 IP
+   PUBLIC_IP=$(curl -s https://api.ipify.org)
+
+   # 创建配置文件
+   cat > /tmp/moon.json << EOF
+   {
+       "id": "$(zerotier-cli info | awk '{print $3}')",
+       "stableEndpoints": ["$PUBLIC_IP:9993"],
+       "rootEndpoints": ["$PUBLIC_IP:9993"]
+   }
+   EOF
+   ```
+
+3. 生成 Moon 配置：
+   ```bash
+   zerotier-idtool initmoon /tmp/moon.json > /tmp/moon.conf
+   ```
+
+4. 提取 Moon ID：
+   ```bash
+   MOON_ID=$(grep -oP '(?<="id": ")[^"]*' /tmp/moon.conf)
+   ```
+
+5. 生成 Moon 文件：
+   ```bash
+   cd /tmp
+   zerotier-idtool genmoon /tmp/moon.conf
+   ```
+
+6. 部署 Moon 文件：
+   ```bash
+   mkdir -p /var/lib/zerotier-one/moons.d
+   cp /tmp/${MOON_ID}.moon /var/lib/zerotier-one/moons.d/
+   ```
+
+7. 重启 ZeroTier 服务：
+   ```bash
+   systemctl restart zerotier-one
+   ```
+
+#### 连接到 Moon 节点
+
+其他 ZeroTier 客户端可以通过以下方式连接到您的 Moon 节点：
+
+##### 使用客户端配置包（推荐）
+
+如果您使用了安装脚本，脚本会生成一个客户端配置包，通常位于：
+```
+/path/to/zerotier_moon_<MOON_ID>.zip
+```
+
+将此包分发给需要连接的客户端，然后按照包中的 README.md 文件中的说明操作。
+
+##### 手动连接
+
+客户端可以使用以下命令手动连接到 Moon 节点：
+
+```bash
+zerotier-cli orbit <MOON_ID> <MOON_ID>
+```
+
+注意：需要输入两次 Moon ID，这不是错误。第一个参数是 Moon 的 ID，第二个参数是 Moon 的"世界 ID"，通常与 Moon ID 相同。
+
+##### 验证连接
+
+连接后，可以使用以下命令验证 Moon 节点是否正常工作：
+
+```bash
+zerotier-cli listpeers | grep MOON
+```
+
+如果显示了您的 Moon 节点，则表示连接成功。
+
+#### 移除 Moon 节点
+
+如果您需要移除 Moon 节点，可以使用安装脚本中的"移除中继（Moon）节点"选项，或手动执行以下操作：
+
+```bash
+# 移除 Moon 文件
+rm -f /var/lib/zerotier-one/moons.d/*.moon
+
+# 重启 ZeroTier 服务
+systemctl restart zerotier-one
+```
+
+客户端上，可以使用以下命令取消连接到 Moon 节点：
+
+```bash
+zerotier-cli deorbit <MOON_ID>
+```
 
 ### 多路径设置
 
