@@ -1415,7 +1415,7 @@ function configure_moon_node() {
 
     # 添加端点信息 - 使用正确的格式 (IP:端口)
     log "${BLUE}配置 Moon 端点...${NC}"
-    run_cmd "jq --arg ip \"$PUBLIC_IP:9993\" '.stableEndpoints = [\$ip]' \"$WORK_DIR/moon.conf\" > \"$WORK_DIR/moon_updated.conf\"" "添加端点信息" || return 1
+    run_cmd "jq --arg ip \"$PUBLIC_IP:9993\" '.stableEndpoints = [\$ip] | .roots[0].stableEndpoints = [\$ip]' \"$WORK_DIR/moon.conf\" > \"$WORK_DIR/moon_updated.conf\"" "添加端点信息" || return 1
     run_cmd "mv \"$WORK_DIR/moon_updated.conf\" \"$WORK_DIR/moon.conf\"" "更新配置文件" || return 1
 
     # 提取 Moon ID
@@ -1697,9 +1697,8 @@ EOF
 
     log "${YELLOW}将配置包分发给客户端，并按照 README.md 中的说明安装${NC}"
 
-    # 清理工作目录，配置完成后不再需要
-    log "${BLUE}清理工作目录...${NC}"
-    run_cmd "rm -rf ${WORK_DIR}" "清理工作目录" || log "${YELLOW}警告: 无法清理工作目录${NC}"
+    # 保留工作目录，以便后续使用
+    log "${BLUE}工作目录已保留在: ${WORK_DIR}${NC}"
 
     return 0
 }
