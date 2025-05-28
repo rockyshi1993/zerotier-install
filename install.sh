@@ -70,12 +70,18 @@ show_help() {
     echo "  3. 如果使用 --accept 选项，脚本会尝试自动授权新节点（需要管理员权限）"
     echo "  4. 脚本可以配置 ZeroTier 作为代理服务器，允许其他 ZeroTier 客户端通过此服务器访问互联网和私有网络"
     echo "  5. 脚本可以配置 ZeroTier 作为中继（Moon）节点，提供更稳定的连接和自定义路由"
+    echo "  6. 脚本可以配置 ZeroTier 作为普通中继（Relay）节点，帮助其他节点建立连接"
     echo ""
     echo "中继（Moon）节点功能:"
     echo "  - 配置中继节点: 将当前服务器配置为 ZeroTier 中继节点，提供更稳定的连接"
     echo "  - 管理中继节点: 查看状态、更新配置、重新生成客户端分发包"
     echo "  - 移除中继节点: 安全地移除中继节点配置"
     echo "  - 客户端分发包: 自动生成包含安装脚本和说明文档的客户端配置包"
+    echo ""
+    echo "普通中继（Relay）节点功能:"
+    echo "  - 配置普通中继: 将当前服务器配置为 ZeroTier 普通中继节点，帮助其他节点建立连接"
+    echo "  - 无需客户端配置: 客户端会自动发现并使用可用的中继节点"
+    echo "  - 适用场景: 当网络环境复杂，节点之间难以直接连接时"
     echo ""
 }
 
@@ -135,6 +141,38 @@ handle_error() {
     local recovery_cmd="$4"
 
     log "${RED}错误 [${error_type}]: ${error_msg}${NC}"
+    log "${YELLOW}建议: ${suggestion}${NC}"
+
+    # 如果提供了恢复命令，询问是否执行
+    if [ -n "$recovery_cmd" ]; then
+        read -p "是否尝试自动修复? [y/N]: " fix_choice
+        if [[ "$fix_choice" == [yY] ]]; then
+            log "${BLUE}尝试修复...${NC}"
+            eval "$recovery_cmd"
+            return $?
+        fi
+    fi
+
+    return 1
+}
+
+# 函数: 处理错误并提供更多上下文信息
+handle_error_with_context() {
+    local error_type="$1"
+    local error_msg="$2"
+    local suggestion="$3"
+    local recovery_cmd="$4"
+    local context="$5"  # 错误发生的上下文（函数名、操作等）
+
+    # 记录到日志文件
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 错误 [${error_type}] 在 ${context}: ${error_msg}" >> "$LOG_FILE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 建议: ${suggestion}" >> "$LOG_FILE"
+
+    # 添加到失败命令日志
+    FAILED_COMMANDS="${FAILED_COMMANDS}• [${context}] ${error_msg}\n"
+
+    # 显示错误信息
+    log "${RED}错误 [${error_type}] 在 ${context}: ${error_msg}${NC}"
     log "${YELLOW}建议: ${suggestion}${NC}"
 
     # 如果提供了恢复命令，询问是否执行
@@ -294,6 +332,12 @@ check_zerotier_installed() {
             MOON_CREATED=true
         fi
 
+        # 检查是否已配置普通中继节点
+        RELAY_CONFIGURED=false
+        if is_relay_node_configured; then
+            RELAY_CONFIGURED=true
+        fi
+
         # 显示菜单
         echo -e "${BLUE}ZeroTier 已安装在此系统上。请选择操作:${NC}"
         echo "1) 加入新网络"
@@ -301,11 +345,11 @@ check_zerotier_installed() {
         echo "3) 查看当前网络状态"
         echo "4) 配置代理服务器"
 
-        # 根据 Moon 节点状态显示不同的菜单选项
-        if [ "$MOON_CREATED" = true ]; then
-            echo "5) 管理中继（Moon）节点"
+        # 根据中继节点状态显示不同的菜单选项
+        if [ "$MOON_CREATED" = true ] || [ "$RELAY_CONFIGURED" = true ]; then
+            echo "5) 管理中继节点"
         else
-            echo "5) 配置中继（Moon）节点"
+            echo "5) 配置中继节点"
         fi
 
         echo "6) 重启 ZeroTier 服务"
@@ -338,42 +382,251 @@ check_zerotier_installed() {
                 fi
                 ;;
             5)
-                if [ "$MOON_CREATED" = true ]; then
-                    # 管理中继（Moon）节点
-                    echo -e "${BLUE}ZeroTier 中继（Moon）节点管理${NC}"
-                    echo "1) 查看中继节点状态"
-                    echo "2) 更新中继节点配置"
-                    echo "3) 移除中继节点"
-                    echo "4) 返回主菜单"
+                # 使用启动时检测的中继节点状态
 
-                    read -p "请选择 [1-4]: " moon_choice
+                if [ "$MOON_CREATED" = true ] || [ "$RELAY_CONFIGURED" = true ]; then
+                    # 已配置中继节点，显示管理菜单
+                    echo -e "${BLUE}ZeroTier 中继节点管理${NC}"
 
-                    case $moon_choice in
+                    if [ "$MOON_CREATED" = true ] && [ "$RELAY_CONFIGURED" = true ]; then
+                        echo "1) 管理 Moon 中继节点"
+                        echo "2) 管理普通中继（Relay）节点"
+                        echo "3) 返回主菜单"
+
+                        read -p "请选择 [1-3]: " relay_choice
+
+                        case $relay_choice in
+                            1)
+                                # Moon 节点管理子菜单
+                                echo -e "${BLUE}ZeroTier Moon 中继节点管理${NC}"
+                                echo "1) 查看中继节点状态"
+                                echo "2) 更新中继节点配置"
+                                echo "3) 移除中继节点"
+                                echo "4) 返回主菜单"
+
+                                read -p "请选择 [1-4]: " moon_choice
+
+                                case $moon_choice in
+                                    1)
+                                        view_moon_status
+                                        ;;
+                                    2)
+                                        update_moon_config
+                                        ;;
+                                    3)
+                                        read -p "确定要移除 ZeroTier Moon 中继节点吗? [y/N]: " remove_choice
+                                        if [[ "$remove_choice" == [yY] ]]; then
+                                            remove_moon_node
+                                        fi
+                                        ;;
+                                    4)
+                                        log "${GREEN}返回主菜单${NC}"
+                                        ;;
+                                    *)
+                                        log "${RED}无效选择${NC}"
+                                        ;;
+                                esac
+                                ;;
+                            2)
+                                # Relay 节点管理子菜单
+                                echo -e "${BLUE}ZeroTier 普通中继（Relay）节点管理${NC}"
+                                echo "1) 查看中继节点状态"
+                                echo "2) 查看中继节点性能"
+                                echo "3) 验证中继节点功能"
+                                echo "4) 移除中继节点"
+                                echo "5) 返回主菜单"
+
+                                read -p "请选择 [1-5]: " relay_submenu_choice
+
+                                case $relay_submenu_choice in
+                                    1)
+                                        # 显示 Relay 节点状态
+                                        log "${BLUE}ZeroTier 普通中继（Relay）节点状态:${NC}"
+                                        if [ -f "/var/lib/zerotier-one/local.conf" ]; then
+                                            log "${GREEN}普通中继节点已配置${NC}"
+                                            log "${BLUE}配置文件: /var/lib/zerotier-one/local.conf${NC}"
+                                            log "${BLUE}节点 ID: $(zerotier-cli info | awk '{print $3}')${NC}"
+                                            log "${BLUE}连接状态:${NC}"
+                                            zerotier-cli listpeers | grep -v MOON
+                                        else
+                                            log "${RED}普通中继节点配置文件不存在${NC}"
+                                        fi
+                                        ;;
+                                    2)
+                                        # 显示中继节点性能
+                                        log "${BLUE}正在监控中继节点性能...${NC}"
+                                        monitor_relay_performance
+
+                                        # 显示历史性能数据
+                                        local PERF_FILE="/var/lib/zerotier-one/relay_performance.log"
+                                        if [ -f "$PERF_FILE" ]; then
+                                            log "${BLUE}历史性能数据 (最近5条):${NC}"
+                                            tail -n 5 "$PERF_FILE"
+                                        fi
+                                        ;;
+                                    3)
+                                        # 验证中继节点功能
+                                        log "${BLUE}正在验证中继节点功能...${NC}"
+                                        if validate_relay_functionality; then
+                                            log "${GREEN}中继节点功能验证成功${NC}"
+                                        else
+                                            log "${YELLOW}警告: 中继节点功能验证未完全通过${NC}"
+                                            log "${YELLOW}建议检查网络设置和防火墙配置${NC}"
+                                        fi
+                                        ;;
+                                    4)
+                                        read -p "确定要移除 ZeroTier 普通中继（Relay）节点吗? [y/N]: " remove_choice
+                                        if [[ "$remove_choice" == [yY] ]]; then
+                                            remove_relay_node
+                                        fi
+                                        ;;
+                                    5)
+                                        log "${GREEN}返回主菜单${NC}"
+                                        ;;
+                                    *)
+                                        log "${RED}无效选择${NC}"
+                                        ;;
+                                esac
+                                ;;
+                            3)
+                                log "${GREEN}返回主菜单${NC}"
+                                ;;
+                            *)
+                                log "${RED}无效选择${NC}"
+                                ;;
+                        esac
+                    elif [ "$MOON_CREATED" = true ]; then
+                        # 只配置了 Moon 节点
+                        echo "1) 查看 Moon 中继节点状态"
+                        echo "2) 更新 Moon 中继节点配置"
+                        echo "3) 移除 Moon 中继节点"
+                        echo "4) 配置普通中继（Relay）节点"
+                        echo "5) 返回主菜单"
+
+                        read -p "请选择 [1-5]: " moon_choice
+
+                        case $moon_choice in
+                            1)
+                                view_moon_status
+                                ;;
+                            2)
+                                update_moon_config
+                                ;;
+                            3)
+                                read -p "确定要移除 ZeroTier Moon 中继节点吗? [y/N]: " remove_choice
+                                if [[ "$remove_choice" == [yY] ]]; then
+                                    remove_moon_node
+                                fi
+                                ;;
+                            4)
+                                read -p "是否将当前节点配置为 ZeroTier 普通中继（Relay）节点? [y/N]: " relay_choice
+                                if [[ "$relay_choice" == [yY] ]]; then
+                                    configure_relay_node
+                                fi
+                                ;;
+                            5)
+                                log "${GREEN}返回主菜单${NC}"
+                                ;;
+                            *)
+                                log "${RED}无效选择${NC}"
+                                ;;
+                        esac
+                    else
+                        # 只配置了 Relay 节点
+                        echo "1) 查看普通中继（Relay）节点状态"
+                        echo "2) 查看中继节点性能"
+                        echo "3) 验证中继节点功能"
+                        echo "4) 移除普通中继（Relay）节点"
+                        echo "5) 配置 Moon 中继节点"
+                        echo "6) 返回主菜单"
+
+                        read -p "请选择 [1-6]: " relay_choice
+
+                        case $relay_choice in
+                            1)
+                                # 显示 Relay 节点状态
+                                log "${BLUE}ZeroTier 普通中继（Relay）节点状态:${NC}"
+                                if [ -f "/var/lib/zerotier-one/local.conf" ]; then
+                                    log "${GREEN}普通中继节点已配置${NC}"
+                                    log "${BLUE}配置文件: /var/lib/zerotier-one/local.conf${NC}"
+                                    log "${BLUE}节点 ID: $(zerotier-cli info | awk '{print $3}')${NC}"
+                                    log "${BLUE}连接状态:${NC}"
+                                    zerotier-cli listpeers | grep -v MOON
+                                else
+                                    log "${RED}普通中继节点配置文件不存在${NC}"
+                                fi
+                                ;;
+                            2)
+                                # 显示中继节点性能
+                                log "${BLUE}正在监控中继节点性能...${NC}"
+                                monitor_relay_performance
+
+                                # 显示历史性能数据
+                                local PERF_FILE="/var/lib/zerotier-one/relay_performance.log"
+                                if [ -f "$PERF_FILE" ]; then
+                                    log "${BLUE}历史性能数据 (最近5条):${NC}"
+                                    tail -n 5 "$PERF_FILE"
+                                fi
+                                ;;
+                            3)
+                                # 验证中继节点功能
+                                log "${BLUE}正在验证中继节点功能...${NC}"
+                                if validate_relay_functionality; then
+                                    log "${GREEN}中继节点功能验证成功${NC}"
+                                else
+                                    log "${YELLOW}警告: 中继节点功能验证未完全通过${NC}"
+                                    log "${YELLOW}建议检查网络设置和防火墙配置${NC}"
+                                fi
+                                ;;
+                            4)
+                                read -p "确定要移除 ZeroTier 普通中继（Relay）节点吗? [y/N]: " remove_choice
+                                if [[ "$remove_choice" == [yY] ]]; then
+                                    remove_relay_node
+                                fi
+                                ;;
+                            5)
+                                read -p "是否将当前节点配置为 ZeroTier Moon 中继节点? [y/N]: " moon_choice
+                                if [[ "$moon_choice" == [yY] ]]; then
+                                    configure_moon_node
+                                fi
+                                ;;
+                            6)
+                                log "${GREEN}返回主菜单${NC}"
+                                ;;
+                            *)
+                                log "${RED}无效选择${NC}"
+                                ;;
+                        esac
+                    fi
+                else
+                    # 未配置任何中继节点，显示配置选项
+                    echo -e "${BLUE}ZeroTier 中继节点配置${NC}"
+                    echo "1) 配置 Moon 中继节点 (高级中继，需要客户端配置)"
+                    echo "2) 配置普通中继（Relay）节点 (基本中继，客户端自动发现)"
+                    echo "3) 返回主菜单"
+
+                    read -p "请选择 [1-3]: " relay_type_choice
+
+                    case $relay_type_choice in
                         1)
-                            view_moon_status
-                            ;;
-                        2)
-                            update_moon_config
-                            ;;
-                        3)
-                            read -p "确定要移除 ZeroTier 中继（Moon）节点吗? [y/N]: " remove_choice
-                            if [[ "$remove_choice" == [yY] ]]; then
-                                remove_moon_node
+                            read -p "是否将当前节点配置为 ZeroTier Moon 中继节点? [y/N]: " moon_choice
+                            if [[ "$moon_choice" == [yY] ]]; then
+                                configure_moon_node
                             fi
                             ;;
-                        4)
+                        2)
+                            read -p "是否将当前节点配置为 ZeroTier 普通中继（Relay）节点? [y/N]: " relay_choice
+                            if [[ "$relay_choice" == [yY] ]]; then
+                                configure_relay_node
+                            fi
+                            ;;
+                        3)
                             log "${GREEN}返回主菜单${NC}"
                             ;;
                         *)
                             log "${RED}无效选择${NC}"
                             ;;
                     esac
-                else
-                    # 配置中继（Moon）节点
-                    read -p "是否将当前节点配置为 ZeroTier 中继（Moon）节点? [y/N]: " moon_choice
-                    if [[ "$moon_choice" == [yY] ]]; then
-                        configure_moon_node
-                    fi
                 fi
                 ;;
             6)
@@ -2383,15 +2636,28 @@ configure_firewall() {
         # Ubuntu/Debian with UFW
         log "${BLUE}检测到 UFW 防火墙，正在配置...${NC}"
         if ufw status | grep -q "active"; then
-            run_cmd "ufw allow 9993/udp" "配置 UFW 防火墙" || {
-                log "${YELLOW}警告: 无法配置 UFW 防火墙${NC}"
-                log "${YELLOW}请手动运行: sudo ufw allow 9993/udp${NC}"
+            log "${BLUE}UFW 已启用，配置端口...${NC}"
+        else
+            log "${YELLOW}UFW 未启用，先允许 SSH 端口再启用...${NC}"
+            # 先允许 SSH 端口，防止远程连接被锁定
+            run_cmd "ufw allow 22/tcp" "允许 SSH 端口" || {
+                handle_error_with_context "FIREWALL_ERROR" "无法配置 SSH 端口" "请确保您有足够的权限配置防火墙，并手动运行: sudo ufw allow 22/tcp" "ufw allow 22/tcp" "configure_firewall"
                 return 1
             }
-            log "${GREEN}UFW 防火墙已配置，UDP 端口 9993 已开放${NC}"
-        else
-            log "${YELLOW}UFW 防火墙未启用，跳过配置${NC}"
+            log "${GREEN}已允许 SSH 端口 (22/tcp)${NC}"
+
+            # 然后启用 UFW
+            run_cmd "ufw --force enable" "启用 UFW 防火墙" || {
+                handle_error_with_context "FIREWALL_ERROR" "无法启用 UFW 防火墙" "请确保您有足够的权限启用防火墙，并手动运行: sudo ufw --force enable" "ufw --force enable" "configure_firewall"
+                return 1
+            }
         fi
+
+        run_cmd "ufw allow 9993/udp" "配置 UFW 防火墙" || {
+            handle_error_with_context "FIREWALL_ERROR" "无法配置 UFW 防火墙开放 9993/udp 端口" "请确保您有足够的权限配置防火墙，并手动运行: sudo ufw allow 9993/udp" "ufw allow 9993/udp" "configure_firewall"
+            return 1
+        }
+        log "${GREEN}UFW 防火墙已配置，UDP 端口 9993 已开放${NC}"
     elif command -v firewall-cmd &>/dev/null; then
         # CentOS/RHEL/Fedora with firewalld
         log "${BLUE}检测到 firewalld 防火墙，正在配置...${NC}"
@@ -2540,6 +2806,648 @@ remove_moon_node() {
     return 0
 }
 
+# 函数: 检查端口可访问性
+function check_port_accessibility() {
+    local ip="$1"
+    local port="$2"
+    local protocol="${3:-udp}"  # 默认为 UDP
+
+    log "${BLUE}检查 ${protocol^^} 端口 $port 可访问性...${NC}"
+    local PORT_CHECK_RESULT="未知"
+
+    # 方法1: 使用 netcat 检查端口
+    if command -v nc &>/dev/null; then
+        log "${BLUE}使用 netcat 检查端口...${NC}"
+        if [ "$protocol" = "udp" ]; then
+            if timeout 5 nc -zu -w 5 "$ip" "$port" >/dev/null 2>&1; then
+                PORT_CHECK_RESULT="可能开放"
+            else
+                PORT_CHECK_RESULT="可能关闭"
+            fi
+        else
+            if timeout 5 nc -z -w 5 "$ip" "$port" >/dev/null 2>&1; then
+                PORT_CHECK_RESULT="可能开放"
+            else
+                PORT_CHECK_RESULT="可能关闭"
+            fi
+        fi
+    fi
+
+    # 方法2: 使用外部服务检查端口 (仅适用于 UDP 9993 端口)
+    if [ "$PORT_CHECK_RESULT" = "未知" ] || [ "$PORT_CHECK_RESULT" = "可能关闭" ]; then
+        if command -v curl &>/dev/null && [ "$port" = "9993" ] && [ "$protocol" = "udp" ]; then
+            log "${BLUE}使用外部服务检查端口...${NC}"
+            if curl -s --max-time 10 "https://portcheck.transmissionbt.com/9993" | grep -q "open"; then
+                PORT_CHECK_RESULT="开放"
+            else
+                PORT_CHECK_RESULT="关闭"
+            fi
+        fi
+    fi
+
+    # 方法3: 使用 nmap 检查端口 (如果可用)
+    if [ "$PORT_CHECK_RESULT" = "未知" ] || [ "$PORT_CHECK_RESULT" = "可能关闭" ]; then
+        if command -v nmap &>/dev/null; then
+            log "${BLUE}使用 nmap 检查端口...${NC}"
+            if [ "$protocol" = "udp" ]; then
+                if nmap -sU -p "$port" "$ip" 2>/dev/null | grep -q "open"; then
+                    PORT_CHECK_RESULT="开放"
+                elif nmap -sU -p "$port" "$ip" 2>/dev/null | grep -q "filtered"; then
+                    PORT_CHECK_RESULT="可能被过滤"
+                else
+                    PORT_CHECK_RESULT="关闭"
+                fi
+            else
+                if nmap -sT -p "$port" "$ip" 2>/dev/null | grep -q "open"; then
+                    PORT_CHECK_RESULT="开放"
+                elif nmap -sT -p "$port" "$ip" 2>/dev/null | grep -q "filtered"; then
+                    PORT_CHECK_RESULT="可能被过滤"
+                else
+                    PORT_CHECK_RESULT="关闭"
+                fi
+            fi
+        fi
+    fi
+
+    # 输出结果
+    if [ "$PORT_CHECK_RESULT" = "开放" ] || [ "$PORT_CHECK_RESULT" = "可能开放" ]; then
+        log "${GREEN}${protocol^^} 端口 $port 检测结果: ${PORT_CHECK_RESULT}${NC}"
+        return 0
+    else
+        log "${YELLOW}警告: ${protocol^^} 端口 $port 检测结果: ${PORT_CHECK_RESULT}${NC}"
+        if [ "$PORT_CHECK_RESULT" = "可能被过滤" ]; then
+            log "${YELLOW}端口可能被防火墙过滤，请检查防火墙设置${NC}"
+        fi
+        return 1
+    fi
+}
+
+# 函数: 检查系统是否适合作为中继节点
+function check_system_for_relay() {
+    log "${BLUE}检查系统配置是否适合作为中继节点...${NC}"
+
+    local CPU_CORES=$(grep -c ^processor /proc/cpuinfo 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "未知")
+    local TOTAL_MEM=$(free -m 2>/dev/null | grep Mem | awk '{print $2}' || sysctl -n hw.memsize 2>/dev/null | awk '{print int($1/1024/1024)}' || echo "未知")
+    local AVAILABLE_MEM=$(free -m 2>/dev/null | grep Mem | awk '{print $7}' || echo "未知")
+    local BANDWIDTH_TEST_RESULT="未知"
+    local DISK_SPACE="未知"
+    local SYSTEM_LOAD="未知"
+    local NETWORK_STABILITY="未知"
+    local UPTIME="未知"
+
+    # 检查磁盘空间
+    log "${BLUE}检查磁盘空间...${NC}"
+    if command -v df &>/dev/null; then
+        DISK_SPACE=$(df -h / | awk 'NR==2 {print $4}')
+        local DISK_SPACE_MB=$(df / | awk 'NR==2 {print $4}')
+        DISK_SPACE_MB=$((DISK_SPACE_MB / 1024))  # 转换为 MB
+    fi
+
+    # 检查系统负载
+    log "${BLUE}检查系统负载...${NC}"
+    if [ -f /proc/loadavg ]; then
+        SYSTEM_LOAD=$(cat /proc/loadavg | awk '{print $1}')
+    elif command -v uptime &>/dev/null; then
+        SYSTEM_LOAD=$(uptime | awk -F'[a-z]:' '{print $2}' | awk '{print $1}')
+    fi
+
+    # 检查系统运行时间
+    log "${BLUE}检查系统运行时间...${NC}"
+    if command -v uptime &>/dev/null; then
+        UPTIME=$(uptime -p 2>/dev/null || uptime | awk '{print $3}')
+    fi
+
+    # 检查带宽（简单测试）
+    log "${BLUE}测试网络带宽...${NC}"
+    if command -v curl &>/dev/null; then
+        # 下载测试 - 使用小文件以避免长时间测试
+        local START_TIME=$(date +%s.%N)
+        curl -s -o /dev/null https://speed.cloudflare.com/__down?bytes=10000000 2>/dev/null
+        local END_TIME=$(date +%s.%N)
+        local DURATION=$(echo "$END_TIME - $START_TIME" | bc)
+        local DOWNLOAD_SPEED=$(echo "10 / $DURATION" | bc)
+        BANDWIDTH_TEST_RESULT="${DOWNLOAD_SPEED:-0} MB/s"
+    fi
+
+    # 检查网络稳定性（简单测试）
+    log "${BLUE}测试网络稳定性...${NC}"
+    if command -v ping &>/dev/null; then
+        local PACKET_LOSS=$(ping -c 10 -q 8.8.8.8 2>/dev/null | grep "packet loss" | awk '{print $7}')
+        local AVG_LATENCY=$(ping -c 10 -q 8.8.8.8 2>/dev/null | grep "min/avg/max" | awk -F'/' '{print $5}')
+        NETWORK_STABILITY="丢包率: ${PACKET_LOSS:-未知}, 平均延迟: ${AVG_LATENCY:-未知} ms"
+    fi
+
+    log "${BLUE}系统配置:${NC}"
+    log "${BLUE}- CPU 核心数: ${CPU_CORES}${NC}"
+    log "${BLUE}- 总内存: ${TOTAL_MEM} MB${NC}"
+    log "${BLUE}- 可用内存: ${AVAILABLE_MEM} MB${NC}"
+    log "${BLUE}- 可用磁盘空间: ${DISK_SPACE}${NC}"
+    log "${BLUE}- 系统负载: ${SYSTEM_LOAD}${NC}"
+    log "${BLUE}- 系统运行时间: ${UPTIME}${NC}"
+    log "${BLUE}- 估计下载带宽: ${BANDWIDTH_TEST_RESULT}${NC}"
+    log "${BLUE}- 网络稳定性: ${NETWORK_STABILITY}${NC}"
+
+    # 评估系统是否适合
+    local IS_SUITABLE=true
+    local RECOMMENDATIONS=""
+
+    # CPU 检查 - 建议至少 2 核
+    if [[ "$CPU_CORES" != "未知" && "$CPU_CORES" -lt 2 ]]; then
+        IS_SUITABLE=false
+        RECOMMENDATIONS="${RECOMMENDATIONS}• CPU 核心数不足，建议至少 2 核\n"
+    fi
+
+    # 内存检查 - 建议至少 1GB 可用内存
+    if [[ "$AVAILABLE_MEM" != "未知" && "$AVAILABLE_MEM" -lt 1024 ]]; then
+        IS_SUITABLE=false
+        RECOMMENDATIONS="${RECOMMENDATIONS}• 可用内存不足，建议至少 1GB 可用内存\n"
+    fi
+
+    # 磁盘空间检查 - 建议至少 1GB 可用空间
+    if [[ "$DISK_SPACE_MB" != "未知" && "$DISK_SPACE_MB" -lt 1024 ]]; then
+        IS_SUITABLE=false
+        RECOMMENDATIONS="${RECOMMENDATIONS}• 磁盘空间不足，建议至少 1GB 可用空间\n"
+    fi
+
+    # 系统负载检查 - 建议负载不超过 CPU 核心数
+    if [[ "$SYSTEM_LOAD" != "未知" && "$CPU_CORES" != "未知" ]]; then
+        if (( $(echo "$SYSTEM_LOAD > $CPU_CORES" | bc -l) )); then
+            IS_SUITABLE=false
+            RECOMMENDATIONS="${RECOMMENDATIONS}• 系统负载过高，建议等待系统负载降低后再配置\n"
+        fi
+    fi
+
+    # 带宽检查 - 建议至少 5MB/s
+    if [[ "$BANDWIDTH_TEST_RESULT" != "未知" ]]; then
+        local BANDWIDTH_VALUE=$(echo "$BANDWIDTH_TEST_RESULT" | awk '{print $1}')
+        if (( $(echo "$BANDWIDTH_VALUE < 5" | bc -l) )); then
+            IS_SUITABLE=false
+            RECOMMENDATIONS="${RECOMMENDATIONS}• 网络带宽较低，建议至少 5MB/s\n"
+        fi
+    fi
+
+    # 网络稳定性检查
+    if [[ "$PACKET_LOSS" != "未知" && "$PACKET_LOSS" != "0%" ]]; then
+        IS_SUITABLE=false
+        RECOMMENDATIONS="${RECOMMENDATIONS}• 网络丢包率较高，可能影响中继节点性能\n"
+    fi
+
+    if [[ "$AVG_LATENCY" != "未知" ]]; then
+        if (( $(echo "$AVG_LATENCY > 100" | bc -l) )); then
+            IS_SUITABLE=false
+            RECOMMENDATIONS="${RECOMMENDATIONS}• 网络延迟较高，建议使用网络延迟更低的服务器\n"
+        fi
+    fi
+
+    if [ "$IS_SUITABLE" = true ]; then
+        log "${GREEN}系统配置适合作为中继节点${NC}"
+        return 0
+    else
+        log "${YELLOW}警告: 系统配置可能不适合作为中继节点${NC}"
+        log "${YELLOW}建议:${NC}"
+        echo -e "$RECOMMENDATIONS"
+
+        read -p "是否仍然继续配置中继节点? [y/N]: " continue_choice
+        if [[ "$continue_choice" == [yY] ]]; then
+            log "${YELLOW}继续配置中继节点...${NC}"
+            return 0
+        else
+            log "${YELLOW}已取消中继节点配置${NC}"
+            return 1
+        fi
+    fi
+}
+
+# 函数: 验证中继节点功能
+function validate_relay_functionality() {
+    log "${BLUE}验证中继节点功能...${NC}"
+
+    # 等待服务完全启动
+    log "${BLUE}等待 ZeroTier 服务稳定...${NC}"
+    sleep 10
+
+    # 检查 ZeroTier 服务状态
+    if ! zerotier-cli info &>/dev/null; then
+        log "${RED}错误: ZeroTier 服务未运行${NC}"
+        return 1
+    fi
+
+    # 检查配置是否正确应用
+    log "${BLUE}检查中继配置...${NC}"
+    if [ -f "/var/lib/zerotier-one/local.conf" ]; then
+        if grep -q "allowTcpFallbackRelay" "/var/lib/zerotier-one/local.conf" && \
+           grep -q "allowDefault" "/var/lib/zerotier-one/local.conf"; then
+            log "${GREEN}中继配置已正确应用${NC}"
+        else
+            log "${RED}错误: 中继配置未正确应用${NC}"
+            return 1
+        fi
+    else
+        log "${RED}错误: 配置文件不存在${NC}"
+        return 1
+    fi
+
+    # 检查连接状态
+    log "${BLUE}检查连接状态...${NC}"
+    local PEERS_COUNT=$(zerotier-cli listpeers | grep -v MOON | wc -l)
+    log "${BLUE}当前连接的对等节点数: ${PEERS_COUNT}${NC}"
+
+    # 检查端口可访问性
+    log "${BLUE}再次检查 UDP 端口 9993 可访问性...${NC}"
+
+    if check_port_accessibility "$PUBLIC_IP" 9993 "udp"; then
+        log "${GREEN}UDP 端口 9993 检测通过，中继功能应正常工作${NC}"
+    else
+        log "${YELLOW}警告: UDP 端口 9993 检测未通过${NC}"
+        log "${YELLOW}中继功能可能受限，请检查防火墙设置${NC}"
+    fi
+
+    # 综合评估
+    local PORT_CHECK_SUCCESS=$?
+
+    if [ $PORT_CHECK_SUCCESS -eq 0 ]; then
+        log "${GREEN}中继节点功能验证通过${NC}"
+        return 0
+    else
+        log "${YELLOW}警告: 中继节点功能验证未完全通过，但配置已应用${NC}"
+        log "${YELLOW}建议: 检查防火墙设置，确保 UDP 端口 9993 开放${NC}"
+        return 0  # 返回成功，因为配置已应用，只是可能存在网络限制
+    fi
+}
+
+# 函数: 监控中继节点性能
+function monitor_relay_performance() {
+    log "${BLUE}监控中继节点性能...${NC}"
+
+    # 检查必要的命令
+    if ! command -v top &>/dev/null || ! command -v grep &>/dev/null; then
+        log "${YELLOW}警告: 无法监控性能，缺少必要的命令${NC}"
+        return 1
+    fi
+
+    # 获取 ZeroTier 进程 ID
+    local ZT_PID=$(pgrep -f zerotier-one)
+    if [ -z "$ZT_PID" ]; then
+        log "${YELLOW}警告: 找不到 ZeroTier 进程${NC}"
+        return 1
+    fi
+
+    # 获取 CPU 使用率
+    local CPU_USAGE=$(top -bn1 | grep $ZT_PID | awk '{print $9}')
+
+    # 获取内存使用率
+    local MEM_USAGE=$(top -bn1 | grep $ZT_PID | awk '{print $10}')
+
+    # 获取连接数
+    local CONNECTIONS=$(zerotier-cli listpeers | grep -v MOON | wc -l)
+
+    # 获取网络流量 (如果可用)
+    local NETWORK_TRAFFIC="未知"
+    if command -v nethogs &>/dev/null; then
+        NETWORK_TRAFFIC=$(nethogs -t -c 2 2>/dev/null | grep zerotier-one | awk '{print $2 " KB/s 发送, " $3 " KB/s 接收"}' || echo "未知")
+    fi
+
+    log "${BLUE}性能监控结果:${NC}"
+    log "${BLUE}- CPU 使用率: ${CPU_USAGE}%${NC}"
+    log "${BLUE}- 内存使用率: ${MEM_USAGE}%${NC}"
+    log "${BLUE}- 连接节点数: ${CONNECTIONS}${NC}"
+    log "${BLUE}- 网络流量: ${NETWORK_TRAFFIC}${NC}"
+
+    # 保存性能数据到文件
+    local PERF_FILE="/var/lib/zerotier-one/relay_performance.log"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] CPU: ${CPU_USAGE}%, MEM: ${MEM_USAGE}%, CONN: ${CONNECTIONS}, NET: ${NETWORK_TRAFFIC}" >> "$PERF_FILE"
+    log "${GREEN}性能数据已保存到 ${PERF_FILE}${NC}"
+
+    return 0
+}
+
+# 函数: 配置普通中继（Relay）节点
+function configure_relay_node() {
+    log "${BLUE}正在配置 ZeroTier 普通中继（Relay）节点...${NC}"
+
+    # 设置错误处理标志
+    local CONFIGURATION_FAILED=false
+
+    # 捕获错误并进行清理的函数
+    cleanup_on_error() {
+        if [ "$CONFIGURATION_FAILED" = true ]; then
+            log "${RED}普通中继节点配置过程中发生错误，正在清理...${NC}"
+            log "${RED}普通中继节点配置失败${NC}"
+            return 1
+        fi
+    }
+
+    # 设置退出陷阱
+    trap cleanup_on_error EXIT
+
+    # 基本检查
+    if ! zerotier-cli info &>/dev/null; then
+        log "${RED}错误: ZeroTier 未运行${NC}"
+        log "${YELLOW}尝试启动 ZeroTier 服务...${NC}"
+        restart_service
+        sleep 3
+        if ! zerotier-cli info &>/dev/null; then
+            log "${RED}错误: 无法启动 ZeroTier 服务${NC}"
+            CONFIGURATION_FAILED=true
+            return 1
+        fi
+    fi
+
+    # 检查系统权限
+    if [ "$(id -u)" -ne 0 ]; then
+        log "${RED}错误: 配置普通中继节点需要 root 权限${NC}"
+        CONFIGURATION_FAILED=true
+        return 1
+    fi
+
+    # 检查系统是否适合作为中继节点
+    if ! check_system_for_relay; then
+        CONFIGURATION_FAILED=true
+        return 1
+    fi
+
+    # 检查是否已经配置了普通中继节点
+    if [ -f "/var/lib/zerotier-one/local.conf" ]; then
+        if grep -q "allowTcpFallbackRelay" "/var/lib/zerotier-one/local.conf"; then
+            log "${YELLOW}检测到已存在普通中继节点配置${NC}"
+            read -p "是否要重新配置普通中继节点? [y/N]: " reconfigure
+            if [[ "$reconfigure" != [yY] ]]; then
+                log "${GREEN}保留现有普通中继节点配置${NC}"
+                trap - EXIT  # 移除陷阱
+                return 0
+            fi
+        fi
+    fi
+
+    # 获取节点信息
+    log "${BLUE}获取节点信息...${NC}"
+    NODE_ID=$(zerotier-cli info | awk '{print $3}')
+    PUBLIC_IP=$(curl -s https://api.ipify.org)
+
+    if [[ -z "$NODE_ID" ]]; then
+        handle_error_with_context "NODE_ERROR" "无法获取 ZeroTier 节点 ID" "请确保 ZeroTier 服务正在运行，并尝试重启服务" "restart_service" "configure_relay_node"
+        CONFIGURATION_FAILED=true
+        return 1
+    fi
+
+    if ! validate_ip "$PUBLIC_IP"; then
+        log "${YELLOW}警告: 无法自动获取公网 IP${NC}"
+        read -p "请手动输入此服务器的公网 IP 地址: " PUBLIC_IP
+        if ! validate_ip "$PUBLIC_IP"; then
+            handle_error_with_context "CONFIG_ERROR" "无效的 IP 地址格式" "请输入有效的 IPv4 地址，格式为 x.x.x.x，其中 x 为 0-255 之间的数字" "prompt_ip_address PUBLIC_IP" "configure_relay_node"
+            if ! validate_ip "$PUBLIC_IP"; then
+                log "${RED}IP 地址仍然无效，退出操作${NC}"
+                CONFIGURATION_FAILED=true
+                return 1
+            fi
+        fi
+    fi
+
+    log "${BLUE}节点信息: ID=$NODE_ID, IP=$PUBLIC_IP${NC}"
+
+    # 检查端口可访问性
+    if check_port_accessibility "$PUBLIC_IP" 9993 "udp"; then
+        log "${GREEN}UDP 端口 9993 检测通过，可从互联网访问${NC}"
+    else
+        log "${YELLOW}警告: 端口 9993 可能无法从互联网访问，这可能影响普通中继节点功能${NC}"
+        log "${YELLOW}建议: 请确保您的防火墙或路由器允许 UDP 端口 9993 的入站流量${NC}"
+
+        # 询问是否配置防火墙
+        read -p "是否自动配置防火墙以开放 UDP 端口 9993? [Y/n]: " configure_fw
+        if [[ "$configure_fw" != [nN] ]]; then
+            configure_firewall
+        else
+            log "${YELLOW}跳过防火墙配置${NC}"
+        fi
+
+        # 询问是否继续
+        read -p "是否继续配置普通中继节点? [Y/n]: " continue_setup
+        if [[ "$continue_setup" == [nN] ]]; then
+            log "${YELLOW}已取消普通中继节点配置${NC}"
+            return 1
+        fi
+        log "${BLUE}继续配置普通中继节点...${NC}"
+    fi
+
+    # 创建或修改 local.conf 文件
+    log "${BLUE}配置普通中继节点...${NC}"
+
+    # 检查 local.conf 是否存在
+    if [ -f "/var/lib/zerotier-one/local.conf" ]; then
+        # 备份现有配置
+        log "${BLUE}备份现有配置...${NC}"
+        run_cmd "cp /var/lib/zerotier-one/local.conf /var/lib/zerotier-one/local.conf.bak" "备份 local.conf" || {
+            log "${YELLOW}警告: 无法备份现有配置${NC}"
+        }
+
+        # 读取现有配置
+        local EXISTING_CONFIG=$(cat /var/lib/zerotier-one/local.conf)
+
+        # 检查是否是有效的 JSON
+        if ! echo "$EXISTING_CONFIG" | jq . &>/dev/null; then
+            log "${YELLOW}警告: 现有配置不是有效的 JSON，将创建新配置${NC}"
+            EXISTING_CONFIG="{}"
+        fi
+
+        # 更新配置
+        log "${BLUE}更新配置...${NC}"
+        echo "$EXISTING_CONFIG" | jq '.settings.allowTcpFallbackRelay = true | .settings.allowDefault = true' > /var/lib/zerotier-one/local.conf.new
+
+        if [ $? -ne 0 ]; then
+            log "${RED}错误: 无法更新配置${NC}"
+            CONFIGURATION_FAILED=true
+            return 1
+        fi
+
+        # 应用新配置
+        run_cmd "mv /var/lib/zerotier-one/local.conf.new /var/lib/zerotier-one/local.conf" "应用新配置" || {
+            log "${RED}错误: 无法应用新配置${NC}"
+            CONFIGURATION_FAILED=true
+            return 1
+        }
+    else
+        # 创建新配置
+        log "${BLUE}创建新配置...${NC}"
+        cat > /var/lib/zerotier-one/local.conf << EOF
+{
+  "settings": {
+    "allowTcpFallbackRelay": true,
+    "allowDefault": true
+  }
+}
+EOF
+        if [ $? -ne 0 ]; then
+            log "${RED}错误: 无法创建配置文件${NC}"
+            CONFIGURATION_FAILED=true
+            return 1
+        fi
+    fi
+
+    # 设置正确的权限
+    run_cmd "chmod 644 /var/lib/zerotier-one/local.conf" "设置配置文件权限" || {
+        log "${YELLOW}警告: 无法设置配置文件权限${NC}"
+    }
+
+    # 创建标记文件
+    run_cmd "touch /var/lib/zerotier-one/.relay_configured" "创建标记文件" || {
+        log "${YELLOW}警告: 无法创建标记文件${NC}"
+    }
+
+    # 重启 ZeroTier 服务以应用配置
+    log "${BLUE}重启 ZeroTier 服务以应用配置...${NC}"
+    local RESTART_SUCCESS=false
+
+    if command -v systemctl &>/dev/null; then
+        if systemctl restart zerotier-one; then
+            RESTART_SUCCESS=true
+        fi
+    elif command -v service &>/dev/null; then
+        if service zerotier-one restart; then
+            RESTART_SUCCESS=true
+        fi
+    else
+        killall zerotier-one 2>/dev/null || true
+        sleep 1
+        if zerotier-one -d; then
+            RESTART_SUCCESS=true
+        fi
+    fi
+
+    if [ "$RESTART_SUCCESS" = false ]; then
+        log "${RED}错误: 无法重启 ZeroTier 服务${NC}"
+        CONFIGURATION_FAILED=true
+        return 1
+    fi
+
+    # 等待服务完全启动
+    log "${BLUE}等待 ZeroTier 服务启动...${NC}"
+    sleep 5
+
+    # 验证配置是否成功
+    log "${BLUE}验证普通中继节点配置...${NC}"
+    if [ -f "/var/lib/zerotier-one/local.conf" ]; then
+        if grep -q "allowTcpFallbackRelay" "/var/lib/zerotier-one/local.conf" && \
+           grep -q "allowDefault" "/var/lib/zerotier-one/local.conf"; then
+            log "${GREEN}普通中继节点配置验证成功！${NC}"
+        else
+            log "${YELLOW}警告: 配置文件存在但可能不完整${NC}"
+        fi
+    else
+        log "${RED}错误: 配置文件不存在${NC}"
+        CONFIGURATION_FAILED=true
+        return 1
+    fi
+
+    # 显示成功信息和下一步指导
+    log "${GREEN}普通中继（Relay）节点配置成功！${NC}"
+    log "${BLUE}节点信息:${NC}"
+    log "${BLUE}- 节点 ID: ${NODE_ID}${NC}"
+    log "${BLUE}- 公网 IP: ${PUBLIC_IP}${NC}"
+    log "${BLUE}- 端口: 9993/UDP${NC}"
+
+    log "${YELLOW}注意事项:${NC}"
+    log "${YELLOW}1. 普通中继节点不需要客户端进行特殊配置${NC}"
+    log "${YELLOW}2. ZeroTier 网络中的节点会自动发现并使用可用的中继节点${NC}"
+    log "${YELLOW}3. 确保此服务器的防火墙允许 UDP 端口 9993 的入站流量${NC}"
+    log "${YELLOW}4. 如果此服务器位于 NAT 后面，请确保端口转发已正确配置${NC}"
+
+    # 自动验证中继功能
+    log "${BLUE}正在验证中继节点功能...${NC}"
+    if validate_relay_functionality; then
+        log "${GREEN}中继节点功能验证成功${NC}"
+    else
+        log "${YELLOW}警告: 中继节点功能验证未完全通过，但配置已应用${NC}"
+        log "${YELLOW}建议检查网络设置和防火墙配置${NC}"
+    fi
+
+    # 监控中继节点性能
+    log "${BLUE}正在监控中继节点初始性能...${NC}"
+    monitor_relay_performance
+
+    log "${GREEN}中继节点配置和验证完成${NC}"
+    log "${YELLOW}提示: 您可以随时通过菜单选项查看中继节点状态和性能${NC}"
+
+    # 移除错误处理陷阱
+    trap - EXIT
+
+    return 0
+}
+
+# 函数: 检查是否已配置普通中继节点
+is_relay_node_configured() {
+    # 检查标记文件
+    if [ -f "/var/lib/zerotier-one/.relay_configured" ]; then
+        return 0  # 已配置普通中继节点
+    fi
+
+    # 检查配置文件
+    if [ -f "/var/lib/zerotier-one/local.conf" ]; then
+        if grep -q "allowTcpFallbackRelay" "/var/lib/zerotier-one/local.conf" && \
+           grep -q "allowDefault" "/var/lib/zerotier-one/local.conf"; then
+            return 0  # 已配置普通中继节点
+        fi
+    fi
+
+    return 1  # 未配置普通中继节点
+}
+
+# 函数: 移除普通中继节点配置
+remove_relay_node() {
+    log "${BLUE}移除普通中继（Relay）节点配置...${NC}"
+
+    # 检查是否已配置普通中继节点
+    if ! is_relay_node_configured; then
+        log "${YELLOW}未检测到普通中继节点配置${NC}"
+        return 1
+    fi
+
+    # 备份现有配置
+    if [ -f "/var/lib/zerotier-one/local.conf" ]; then
+        log "${BLUE}备份现有配置...${NC}"
+        run_cmd "cp /var/lib/zerotier-one/local.conf /var/lib/zerotier-one/local.conf.bak.$(date '+%Y%m%d_%H%M%S')" "备份 local.conf" || {
+            log "${YELLOW}警告: 无法备份现有配置${NC}"
+        }
+
+        # 读取现有配置
+        local EXISTING_CONFIG=$(cat /var/lib/zerotier-one/local.conf)
+
+        # 检查是否是有效的 JSON
+        if ! echo "$EXISTING_CONFIG" | jq . &>/dev/null; then
+            log "${YELLOW}警告: 现有配置不是有效的 JSON，将创建新配置${NC}"
+            EXISTING_CONFIG="{}"
+        fi
+
+        # 更新配置，移除中继节点设置
+        log "${BLUE}更新配置...${NC}"
+        echo "$EXISTING_CONFIG" | jq 'del(.settings.allowTcpFallbackRelay) | del(.settings.allowDefault)' > /var/lib/zerotier-one/local.conf.new
+
+        if [ $? -ne 0 ]; then
+            log "${RED}错误: 无法更新配置${NC}"
+            return 1
+        fi
+
+        # 应用新配置
+        run_cmd "mv /var/lib/zerotier-one/local.conf.new /var/lib/zerotier-one/local.conf" "应用新配置" || {
+            log "${RED}错误: 无法应用新配置${NC}"
+            return 1
+        }
+    fi
+
+    # 移除标记文件
+    if [ -f "/var/lib/zerotier-one/.relay_configured" ]; then
+        run_cmd "rm -f /var/lib/zerotier-one/.relay_configured" "移除标记文件" || {
+            log "${YELLOW}警告: 无法移除标记文件${NC}"
+        }
+    fi
+
+    # 重启 ZeroTier 服务以应用配置
+    log "${BLUE}重启 ZeroTier 服务以应用配置...${NC}"
+    restart_service
+
+    log "${GREEN}普通中继节点配置已移除${NC}"
+    return 0
+}
+
 # 函数: 配置 Moon 节点
 function configure_moon_node() {
     log "${BLUE}正在配置 ZeroTier Moon 节点...${NC}"
@@ -2663,33 +3571,9 @@ function configure_moon_node() {
     log "${BLUE}节点信息: ID=$NODE_ID, IP=$PUBLIC_IP${NC}"
 
     # 检查端口可访问性
-    log "${BLUE}检查 UDP 端口 9993 可访问性...${NC}"
-    PORT_CHECK_RESULT="未知"
-
-    # 尝试使用不同的方法检查端口
-    if command -v nc &>/dev/null; then
-        # 使用 netcat 检查端口
-        if timeout 5 nc -zu -w 5 $PUBLIC_IP 9993 >/dev/null 2>&1; then
-            PORT_CHECK_RESULT="可能开放"
-        else
-            PORT_CHECK_RESULT="可能关闭"
-        fi
-    elif command -v curl &>/dev/null; then
-        # 尝试使用外部服务检查端口
-        if curl -s --max-time 10 "https://portcheck.transmissionbt.com/9993" | grep -q "open"; then
-            PORT_CHECK_RESULT="开放"
-        else
-            PORT_CHECK_RESULT="关闭"
-        fi
-    fi
-
-    if [ "$PORT_CHECK_RESULT" = "开放" ]; then
-        log "${GREEN}UDP 端口 9993 检测结果: 开放 (可从互联网访问)${NC}"
-    elif [ "$PORT_CHECK_RESULT" = "可能开放" ]; then
-        log "${YELLOW}UDP 端口 9993 检测结果: 可能开放 (本地检测通过)${NC}"
-        log "${YELLOW}建议: 确保您的防火墙或路由器允许 UDP 端口 9993 的入站流量${NC}"
+    if check_port_accessibility "$PUBLIC_IP" 9993 "udp"; then
+        log "${GREEN}UDP 端口 9993 检测通过，可从互联网访问${NC}"
     else
-        log "${YELLOW}UDP 端口 9993 检测结果: ${PORT_CHECK_RESULT}${NC}"
         log "${YELLOW}警告: 端口 9993 可能无法从互联网访问，这可能影响 Moon 节点功能${NC}"
         log "${YELLOW}建议: 请确保您的防火墙或路由器允许 UDP 端口 9993 的入站流量${NC}"
 
@@ -2735,6 +3619,7 @@ function configure_moon_node() {
 
     # 使用绝对路径，避免目录切换问题
     run_cmd "zerotier-idtool initmoon /var/lib/zerotier-one/identity.public > $WORK_DIR/moon.conf" "创建初始 Moon 配置" || {
+        handle_error_with_context "MOON_CONFIG_ERROR" "无法创建初始 Moon 配置" "请确保 ZeroTier 身份文件存在且有权限访问" "ls -la /var/lib/zerotier-one/identity.public" "configure_moon_node"
         CONFIGURATION_FAILED=true
         return 1
     }
@@ -2744,18 +3629,18 @@ function configure_moon_node() {
         log "${YELLOW}正在安装 jq...${NC}"
         if command -v apt-get &>/dev/null; then
             run_cmd "apt-get update -y && apt-get install -y jq" "安装 jq" || {
-                log "${RED}错误: 无法安装 jq${NC}"
+                handle_error_with_context "DEPENDENCY_ERROR" "无法安装 jq" "请确保系统可以访问软件源，并手动安装 jq: apt-get install -y jq" "apt-get install -y jq" "configure_moon_node"
                 CONFIGURATION_FAILED=true
                 return 1
             }
         elif command -v yum &>/dev/null; then
             run_cmd "yum install -y jq" "安装 jq" || {
-                log "${RED}错误: 无法安装 jq${NC}"
+                handle_error_with_context "DEPENDENCY_ERROR" "无法安装 jq" "请确保系统可以访问软件源，并手动安装 jq: yum install -y jq" "yum install -y jq" "configure_moon_node"
                 CONFIGURATION_FAILED=true
                 return 1
             }
         else
-            log "${RED}错误: 无法自动安装 jq，请手动安装后重试${NC}"
+            handle_error_with_context "DEPENDENCY_ERROR" "无法自动安装 jq" "请手动安装 jq 后重试，jq 是处理 JSON 数据所必需的工具" "" "configure_moon_node"
             CONFIGURATION_FAILED=true
             return 1
         fi
