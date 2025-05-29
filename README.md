@@ -1,5 +1,8 @@
 # ZeroTier 安装指南
 
+> 版本: 1.1  
+> 最后更新: 2023-06-01
+
 ## 目录
 - [简介](#简介)
 - [系统要求](#系统要求)
@@ -17,9 +20,12 @@
 - [高级配置](#高级配置)
   - [配置 ZeroTier 作为代理服务器](#配置-zerotier-作为代理服务器)
   - [配置 ZeroTier 中继（Moon）节点](#配置-zerotier-中继moon节点)
+  - [配置 ZeroTier 普通中继（Relay）节点](#配置-zerotier-普通中继relay节点)
   - [命令行工具](#命令行工具)
   - [本地配置文件](#本地配置文件)
   - [多路径设置](#多路径设置)
+  - [性能监控与日志分析](#性能监控与日志分析)
+  - [配置向导与状态仪表板](#配置向导与状态仪表板)
 - [与OpenVPN配合使用](#与openvpn配合使用)
 - [参考资料](#参考资料)
 
@@ -373,6 +379,99 @@ ip route show
   sudo setenforce 0
   ```
 
+#### 防火墙配置问题
+
+ZeroTier 需要 UDP 端口 9993 开放才能正常工作。以下是在不同系统上配置防火墙的方法：
+
+##### 使用安装脚本配置防火墙
+
+本仓库提供的安装脚本可以自动配置防火墙规则：
+
+```bash
+# 下载安装脚本
+curl -s -o install.sh https://raw.githubusercontent.com/rockyshi1993/zerotier-install/main/install.sh
+
+# 执行安装脚本
+sudo bash install.sh
+```
+
+在安装过程中，脚本会自动检测并配置防火墙。
+
+##### 手动配置防火墙
+
+###### UFW (Ubuntu/Debian)
+
+```bash
+# 确保 SSH 端口开放（重要！避免远程连接被锁定）
+sudo ufw allow 22/tcp
+
+# 允许 ZeroTier 端口
+sudo ufw allow 9993/udp
+
+# 启用 UFW（如果尚未启用）
+sudo ufw enable
+
+# 检查状态
+sudo ufw status
+```
+
+###### firewalld (CentOS/RHEL/Fedora)
+
+```bash
+# 允许 ZeroTier 端口
+sudo firewall-cmd --permanent --add-port=9993/udp
+
+# 重载防火墙规则
+sudo firewall-cmd --reload
+
+# 检查状态
+sudo firewall-cmd --list-ports
+```
+
+###### iptables
+
+```bash
+# 允许 ZeroTier 端口
+sudo iptables -A INPUT -p udp --dport 9993 -j ACCEPT
+
+# 保存规则（根据系统不同）
+# Debian/Ubuntu
+sudo apt-get install iptables-persistent
+sudo netfilter-persistent save
+
+# CentOS/RHEL
+sudo service iptables save
+
+# 检查状态
+sudo iptables -L | grep 9993
+```
+
+###### Windows Defender 防火墙
+
+1. 打开 Windows Defender 防火墙设置（控制面板 > 系统和安全 > Windows Defender 防火墙）
+2. 点击"允许应用或功能通过 Windows Defender 防火墙"
+3. 点击"更改设置"，然后点击"允许其他应用"
+4. 浏览并选择 ZeroTier One 程序（通常位于 `C:\Program Files (x86)\ZeroTier\One\ZeroTier One.exe`）
+5. 确保同时勾选"专用"和"公用"网络
+
+###### macOS 防火墙
+
+1. 打开系统偏好设置 > 安全性与隐私 > 防火墙
+2. 点击"防火墙选项"
+3. 确保 ZeroTier One 应用程序被设置为"允许传入连接"
+
+##### 验证防火墙配置
+
+配置完成后，可以使用以下命令验证端口是否开放：
+
+```bash
+# 使用 netcat 检查（Linux/macOS）
+nc -zuv localhost 9993
+
+# 使用在线端口检查工具
+# 访问 https://portchecker.co/ 并检查 UDP 端口 9993
+```
+
 ### 常见错误代码及含义
 
 | 错误代码 | 含义 | 解决方法 |
@@ -673,6 +772,92 @@ systemctl restart zerotier-one
 zerotier-cli deorbit <MOON_ID>
 ```
 
+### 配置 ZeroTier 普通中继（Relay）节点
+
+除了 Moon 中继节点外，ZeroTier 还支持配置普通中继（Relay）节点。与 Moon 节点相比，普通中继节点的特点是：
+
+- **自动发现**：客户端无需特殊配置即可自动发现并使用可用的中继节点
+- **配置简单**：设置过程更简单，无需生成和分发客户端配置包
+- **适用场景**：适合网络环境复杂，节点之间难以直接连接的情况
+
+#### 普通中继节点与 Moon 节点的区别
+
+| 特性 | 普通中继（Relay）节点 | Moon 中继节点 |
+|------|---------------------|-------------|
+| 客户端配置 | 无需特殊配置，自动发现 | 需要手动配置客户端连接到特定 Moon |
+| 控制粒度 | 全局性，所有客户端可能使用 | 可控性强，只有配置了特定 Moon 的客户端才会使用 |
+| 配置复杂度 | 简单 | 相对复杂，需要生成和分发配置 |
+| 适用场景 | 一般性连接辅助 | 特定网络环境优化，私有网络控制 |
+
+#### 使用安装脚本配置普通中继节点
+
+如果您使用本仓库提供的安装脚本，可以轻松配置普通中继节点：
+
+```bash
+# 下载安装脚本
+curl -s -o install.sh https://raw.githubusercontent.com/rockyshi1993/zerotier-install/main/install.sh
+
+# 执行安装脚本
+sudo bash install.sh
+```
+
+在安装脚本的菜单中，选择"配置中继节点"，然后选择"配置普通中继（Relay）节点"选项。
+
+#### 手动配置普通中继节点
+
+如果您已经安装了 ZeroTier，也可以手动配置普通中继节点：
+
+1. 创建或修改 local.conf 文件：
+   ```bash
+   # 创建配置文件
+   cat > /var/lib/zerotier-one/local.conf << EOF
+   {
+     "settings": {
+       "allowTcpFallbackRelay": true,
+       "allowDefault": true
+     }
+   }
+   EOF
+   ```
+
+2. 设置正确的权限：
+   ```bash
+   chmod 644 /var/lib/zerotier-one/local.conf
+   ```
+
+3. 重启 ZeroTier 服务：
+   ```bash
+   # 使用 systemd
+   systemctl restart zerotier-one
+
+   # 或使用 service
+   service zerotier-one restart
+   ```
+
+#### 验证普通中继节点功能
+
+配置完成后，可以使用以下命令验证中继节点功能：
+
+```bash
+# 查看连接的对等节点
+zerotier-cli listpeers
+
+# 检查 UDP 端口 9993 是否开放
+nc -zuv <您的公网IP> 9993
+```
+
+#### 监控中继节点性能
+
+您可以使用安装脚本中的监控功能查看中继节点性能，或手动检查以下指标：
+
+```bash
+# 查看 CPU 和内存使用情况
+top -bn1 | grep zerotier-one
+
+# 查看连接数
+zerotier-cli listpeers | wc -l
+```
+
 ### 多路径设置
 
 对于需要高可用性的环境，可以配置 ZeroTier 使用多个物理路径：
@@ -684,6 +869,119 @@ zerotier-cli set <network-id> allowMultipath=1
 # 设置多路径模式（active-backup 或 broadcast）
 zerotier-cli set <network-id> multipathMode=active-backup
 ```
+
+### 性能监控与日志分析
+
+ZeroTier 提供了多种方式来监控网络性能和分析日志，这对于排查问题和优化网络至关重要。
+
+#### 性能监控
+
+使用本仓库提供的安装脚本，您可以轻松监控 ZeroTier 节点的性能：
+
+```bash
+# 执行安装脚本
+sudo bash install.sh
+```
+
+在菜单中选择"管理中继节点"，然后选择"监控中继节点性能"或"持续监控中继节点"选项。
+
+##### 手动监控性能
+
+您也可以使用以下命令手动监控 ZeroTier 的性能：
+
+```bash
+# 查看 CPU 和内存使用情况
+ps -o pid,ppid,cmd,%mem,%cpu -p $(pgrep zerotier-one)
+
+# 查看网络连接
+zerotier-cli listpeers
+
+# 查看网络流量（如果安装了 vnstat）
+vnstat -i $(ip -o link show | grep zt | awk -F': ' '{print $2}' | head -n 1) -h 1
+```
+
+#### 日志分析
+
+ZeroTier 的日志包含了重要的诊断信息，可以帮助您排查问题：
+
+##### 使用安装脚本分析日志
+
+在安装脚本菜单中选择"分析 ZeroTier 日志"选项，脚本将自动：
+
+1. 收集系统日志中与 ZeroTier 相关的条目
+2. 提取错误和警告信息
+3. 分析连接事件和 Moon 节点事件
+4. 生成综合报告
+
+##### 手动查看日志
+
+您也可以手动查看 ZeroTier 的日志：
+
+```bash
+# 在 Linux 系统上
+journalctl -u zerotier-one --no-pager | tail -n 100
+
+# 或者查看系统日志
+grep -i "zerotier" /var/log/syslog | tail -n 100
+
+# 在 macOS 上
+sudo tail -f /var/log/system.log | grep ZeroTier
+
+# 在 Windows 上（PowerShell）
+Get-EventLog -LogName Application | Where-Object {$_.Source -like "*ZeroTier*"} | Select-Object -First 20
+```
+
+#### 检查更新
+
+定期检查 ZeroTier 更新可以确保您获得最新的功能和安全修复：
+
+```bash
+# 使用安装脚本检查更新
+sudo bash install.sh
+```
+
+在菜单中选择"检查更新"选项。
+
+### 配置向导与状态仪表板
+
+本仓库提供的安装脚本包含了配置向导和状态仪表板功能，可以简化 ZeroTier 的配置和监控过程。
+
+#### 配置向导
+
+配置向导提供了一种交互式方式来配置 ZeroTier：
+
+```bash
+# 执行安装脚本
+sudo bash install.sh
+```
+
+在菜单中选择"配置向导"选项，然后按照提示进行操作。配置向导将引导您完成以下步骤：
+
+1. 基本信息收集（节点 ID、公网 IP 等）
+2. 选择配置类型（标准节点、中继节点或代理服务器）
+3. 根据选择进行详细配置
+4. 验证配置
+
+#### 状态仪表板
+
+状态仪表板提供了 ZeroTier 网络的实时概览：
+
+```bash
+# 执行安装脚本
+sudo bash install.sh
+```
+
+在菜单中选择"状态仪表板"选项。仪表板将显示以下信息：
+
+- 基本节点信息
+- 网络连接状态
+- Moon 节点信息
+- 系统资源使用情况
+- 连接统计
+- 最近的日志条目
+- 防火墙状态
+
+这些工具可以帮助您更有效地管理和监控 ZeroTier 网络，特别是在复杂的网络环境中。
 
 ## 与OpenVPN配合使用
 
